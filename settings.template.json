@@ -3,7 +3,6 @@
   "TempRoot": "",
   "SevenZipExe": "C:\\Program Files\\7-Zip\\7z.exe",
   "ArchiveExtensions": [".zip", ".7z", ".rar"],
-  "ZipCompressionArgs": ["-tzip", "-mx=9", "-mm=Deflate64", "-mfb=258", "-mpass=15", "-md=256m"],
   "ShareUser": "mister",
   "SharePassword": "dontplay"
 }

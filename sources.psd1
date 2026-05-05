@@ -2,11 +2,11 @@
   Sources = @(
 #    @{
 #        Name = 'Acetronic MPU 1000'
-#        SourcePath = '\\server\share\VC4000'
+#        SourcePath = 'wfe'
 #    }
 #    @{
 #        Name = 'Atari 2600'
-#        SourcePath = '\\server\share\Atari2600'
+#        SourcePath = 'fsdg'
 #    }
 #    @{
 #        Name = 'Atari 5200'
@@ -23,6 +23,10 @@
 #    @{
 #        Name = 'Bally Astrocade'
 #        SourcePath = '\\server\share\Astrocade'
+#    }
+#    @{
+#        Name = 'BBC Bridge Companion'
+#        SourcePath = '\\server\share\BBCBridgeCompanion'
 #    }
 #    @{
 #        Name = 'Bandai Super Vision 8000'
@@ -85,7 +89,7 @@
 #        SourcePath = '\\server\share\Intellivision'
 #    }
 #    @{
-#        Name = 'Mega Drive - Sega Genesis'
+#        Name = 'Sega Genesis - Mega Drive'
 #        SourcePath = '\\server\share\MegaDrive'
 #    }
 #    @{
@@ -110,7 +114,7 @@
 #    }
 #    @{
 #        Name = 'Nintendo Entertainment System'
-#        SourcePath = '\\server\share\NES'
+#        SourcePath = '\\tower.local\Video Game Archives\Console Video Games\Backups (No-Intro - Redump - 1g1r)\Nintendo - Nintendo Entertainment System (2.0 Header)'
 #    }
 #    @{
 #        Name = 'Nintendo Entertainment System Music Player'
@@ -141,11 +145,15 @@
 #        SourcePath = '\\server\share\PokemonMini'
 #    }
 #    @{
+#        Name = 'Nintendo Super Game Boy'
+#        SourcePath = '\\server\share\SGB'
+#    }
+#    @{
 #        Name = 'Occitane OC2000'
 #        SourcePath = '\\server\share\VC4000'
 #    }
 #    @{
-#        Name = 'Philips Compact Disc-Interactive (CD-i)'
+#        Name = 'Philips Compact Disc-Interactive'
 #        SourcePath = '\\server\share\CD-i'
 #    }
 #    @{

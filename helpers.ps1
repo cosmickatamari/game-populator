@@ -1,14 +1,18 @@
 <#
-NAS-Populator - Helper functions
-https://github.com/cosmickatamari/nas-populator
+Game Populator — helper functions
+https://github.com/cosmickatamari/game-populator
 
 Created by: cosmickatamari
-Updated: 03/08/2026
+Updated: 05/04/2026
 #>
 
 # Single source for name and version; change here only.
-$script:ScriptName = 'NAS Populator'
-$script:ScriptVersion = '2026.3.8'
+$script:ScriptName = 'Game Populator'
+$script:ScriptVersion = '2026.5.4'
+$script:GamePopulatorRepoUrl = 'https://github.com/cosmickatamari/game-populator'
+$script:GamePopulatorMainZipUrl = 'https://github.com/cosmickatamari/game-populator/archive/refs/heads/main.zip'
+# Tracks last SMB auth fingerprint per UNC server so mismatch can fail fast before long timeouts.
+$script:SmbEstablishedAuthFingerprintsByUncServer = @{}
 
 function Write-Info {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -32,43 +36,69 @@ function Write-Fail {
     exit 1
 }
 
+function Invoke-OutputFlush {
+    try { [Console]::Out.Flush() } catch { }
+}
+
 function Show-Help {
     Clear-Host
     Write-Host "=== [ $script:ScriptName ]===" -ForegroundColor Blue
     Write-Host "=== [ Version $script:ScriptVersion ] ===`n" -ForegroundColor Blue
 
-    Write-Info "Organizes game image files for NAS-based sharing."
-    Write-Info "Extracts archives to folders or compresses files into ZIP archives with maximum compression.`n"
+    Write-Info "Organizes game images for copying to MiSTer (network shares or local/USB drives)."
+    Write-Info "Extracts archives and copies dumps and disc images for use on MiSTer (files are not left as ZIP on the destination).`n"
 
     Write-Host "Parameters:" -ForegroundColor DarkYellow
     Write-Host "  -Help             Show this help." -ForegroundColor White
-    Write-Host "  -RawOrg           RAW with region organization + cleanup." -ForegroundColor White
-    Write-Host "  -RawNoOrg         RAW without region organization + cleanup." -ForegroundColor White
-    Write-Host "  -ZipOrg           ZIP with region organization + cleanup (ZIP files copied as-is)." -ForegroundColor White
-    Write-Host "  -ZipNoOrg         ZIP without region organization + cleanup (ZIP files copied as-is)." -ForegroundColor White
+    Write-Host "  -Diag             Print startup progress (use if the script seems to hang)." -ForegroundColor White
+    Write-Host "  -Org              Extract archives and copy with region organization + cleanup." -ForegroundColor White
+    Write-Host "  -NoOrg            Extract archives and copy without region organization + cleanup." -ForegroundColor White
     Write-Host "  -Cleanup          Cleanup only." -ForegroundColor White
     Write-Host "  -DestinationRoot  Specifies destination root folder. (ignores JSON value)" -ForegroundColor White
     Write-Host "  -TempRoot         Specifies temp extraction folder. (ignores JSON value)`n" -ForegroundColor White
 
     Write-Host "Interactive menu (when run without a mode parameter):" -ForegroundColor DarkYellow
-    Write-Host "  1-4. Same as -RawOrg/ -RawNoOrg/ -ZipOrg/ -ZipNoOrg." -ForegroundColor White
-    Write-Host "  5.   Empty destination folder cleanup and removal of files with invalid extensions." -ForegroundColor White
-    Write-Host "  6.   Recreate config files from templates (prompts for each file)." -ForegroundColor White
-    Write-Host "  E.   Exit.`n" -ForegroundColor White
+    Write-Host ""
+
+    Write-Host "  Maintenance" -ForegroundColor DarkYellow
+    Write-Host "    1. Turn On/Off Systems:" -ForegroundColor White
+    Write-Host "       Lists from " -NoNewline -ForegroundColor White
+    Write-Host "sources.psd1" -NoNewline -ForegroundColor Green
+    Write-Host ", toggle on/off by number(s), edit SourcePath; script restarts when you quit." -ForegroundColor White
+    Write-Host "    2. Edit " -NoNewline -ForegroundColor White
+    Write-Host "settings.json" -NoNewline -ForegroundColor Green
+    Write-Host " (numbered fields; Q restarts script to reload settings)." -ForegroundColor White
+    Write-Host "    3. Empty destination folder cleanup and removal of files with invalid extensions." -ForegroundColor White
+    Write-Host "    4. Recreate config files from templates (prompts for each file)." -ForegroundColor White
+    Write-Host "    5. Reinstall latest script files from GitHub, then restart." -ForegroundColor White
+    Write-Host "    6. Reset SMB mappings (from " -NoNewline -ForegroundColor White
+    Write-Host "settings.json" -NoNewline -ForegroundColor Green
+    Write-Host "), reconnect destination.`n" -ForegroundColor White
+
+    Write-Host "  Performing" -ForegroundColor DarkYellow
+    Write-Host "    7-8. Same as -Org / -NoOrg (archive extraction and file copying, with post-copy cleanup)." -ForegroundColor White
+    Write-Host "    9.   Custom run (paths; optional destination UNC user/password; region/cleanup options).`n" -ForegroundColor White
+
+    Write-Host "    E.   Exit Program`n" -ForegroundColor White
 
     Write-Host "Config Files:" -ForegroundColor DarkYellow
-    Write-Host "  nas-populator-settings.json          Paths, 7-Zip, and share credentials." -ForegroundColor White
-    Write-Host "  nas-populator-sources.psd1           Console share list (uncomment to enable)." -ForegroundColor White
-    Write-Host "  nas-populator-console-names.json     Official names, short names, subdirs, allowed extensions.`n" -ForegroundColor White
+    Write-Host "  settings.json                Paths, 7-Zip, and share credentials." -ForegroundColor White
+    Write-Host "  sources.psd1                 Console share list (uncomment to enable)." -ForegroundColor White
+    Write-Host "  console-names.json           Official names, short names, subdirs, allowed extensions.`n" -ForegroundColor White
 
     Write-Host "Templates:" -ForegroundColor DarkYellow
-    Write-Host "  nas-populator-settings.template.json" -ForegroundColor White
-    Write-Host "  nas-populator-sources.template.psd1" -ForegroundColor White
-    Write-Host "  nas-populator-console-names.template.json" -ForegroundColor White
-    Write-Host "  - Used to recreate config files (option 6 or when a file is missing/invalid).`n" -ForegroundColor White
+    Write-Host "  settings.template.json" -ForegroundColor White
+    Write-Host "  sources.template.psd1" -ForegroundColor White
+    Write-Host "  console-names.template.json" -ForegroundColor White
+    Write-Host "  - Used to recreate config files (interactive option 4 or when a file is missing/invalid)." -ForegroundColor White
+    Write-Host "  - If a template is missing locally, automatically fetches a new one from GitHub.`n" -ForegroundColor White
 
     Write-Host "Notes:" -ForegroundColor DarkYellow
     Write-Host "  - Existing destination files are never overwritten." -ForegroundColor White
+    Write-Host "  - Pass -Org, -NoOrg, or -Cleanup to run without the interactive menu; passing only" -ForegroundColor White
+    Write-Host "    -- DestinationRoot / -TempRoot still shows the menu (paths override JSON)." -ForegroundColor White
+    Write-Host '  - UNC per server (\\host): destination and sources on the same hostname must share one SMB login — leave ShareUser/password empty for both, or fill both with the same account. Mixing triggers Windows error "multiple connections" and slow timeouts.' -ForegroundColor White
+    Write-Host '  - If the folder name at the destination path end is not "games", "\games" is appended so layouts match MiSTer''s expected games folder.' -ForegroundColor White
     Write-Host "  - CHD files are copied as-is." -ForegroundColor White
     Write-Host "  - Folders with extracted BIN/CUE are copied as-is in a separate game folder." -ForegroundColor White
     Write-Host "  - Region organization moves files into region folders during processing." -ForegroundColor White
@@ -76,24 +106,51 @@ function Show-Help {
     Write-Host "  - Boot ROMs files are never moved to region folders and are always copied to the root of the destination folder.`n" -ForegroundColor White
 
     Write-Host "Examples:" -ForegroundColor DarkYellow
-    Write-Host "  .\nas-populator.ps1 -Help" -ForegroundColor White
-    Write-Host "  .\nas-populator.ps1 -ZipOrg" -ForegroundColor White
-    Write-Host "  .\nas-populator.ps1 -ZipNoOrg -DestinationRoot \\server\storage" -ForegroundColor White
-    Write-Host "  .\nas-populator.ps1 -RawNoOrg -TempRoot D:\temp`n" -ForegroundColor White
+    Write-Host "  .\game-populator.ps1 -Help" -ForegroundColor White
+    Write-Host "  .\game-populator.ps1 -Diag" -ForegroundColor White
+    Write-Host "  .\game-populator.ps1 -Org" -ForegroundColor White
+    Write-Host "  .\game-populator.ps1 -NoOrg -DestinationRoot \\server\storage" -ForegroundColor White
+    Write-Host "  .\game-populator.ps1 -NoOrg -TempRoot D:\temp`n" -ForegroundColor White
     exit 0
 }
 
 function Read-YesNoDefaultYes {
     param([Parameter(Mandatory = $true)][string]$Prompt)
     while ($true) {
-        Write-Host $Prompt -NoNewline -ForegroundColor White
-        Write-Host " (Y/N) [Y] " -NoNewline -ForegroundColor Cyan
-        $answer = [Console]::ReadLine().Trim()
+        # Read-Host works across hosts; [Console]::ReadLine() can block indefinitely in some consoles
+        # or when no stdin is attached (looks like a hang with no prompt).
+        Invoke-OutputFlush
+        $answer = Read-Host ($Prompt + ' (Y/N) [Y]')
+        if ($null -eq $answer) { $answer = '' }
+        $answer = $answer.Trim()
         if ([string]::IsNullOrWhiteSpace($answer)) { return $true }
         if ($answer -match '^(y|yes)$') { return $true }
         if ($answer -match '^(n|no)$') { return $false }
         Write-Warn "Please enter Y or N."
     }
+}
+
+function Read-YesNoDefaultNo {
+    param([Parameter(Mandatory = $true)][string]$Prompt)
+    while ($true) {
+        Invoke-OutputFlush
+        $answer = Read-Host ($Prompt + ' (Y/N) [N]')
+        if ($null -eq $answer) { $answer = '' }
+        $answer = $answer.Trim()
+        if ([string]::IsNullOrWhiteSpace($answer)) { return $false }
+        if ($answer -match '^(y|yes)$') { return $true }
+        if ($answer -match '^(n|no)$') { return $false }
+        Write-Warn "Please enter Y or N."
+    }
+}
+
+function Format-PathForDisplay {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $Path }
+    if ($Path.StartsWith('\\', [StringComparison]::Ordinal)) {
+        return '\\' + (($Path.Substring(2)) -replace '\\+', '\')
+    }
+    return ($Path -replace '\\+', '\')
 }
 
 function Repair-JsonPathValues {
@@ -112,6 +169,145 @@ function Repair-JsonPathValues {
         })
     }
     return $output
+}
+
+function Invoke-GamePopulatorSelfUpdate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptRoot
+    )
+    $protectedLeaves = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($leaf in @('settings.json', 'sources.psd1', 'console-names.json')) {
+        $protectedLeaves.Add($leaf) | Out-Null
+    }
+    $prompt = "Download the latest script files from $script:GamePopulatorRepoUrl ? Existing config files (settings, sources, console names) are not overwritten."
+    if (-not (Read-YesNoDefaultYes $prompt)) {
+        return $false
+    }
+
+    $gitDir = Join-Path $ScriptRoot '.git'
+    if ((Test-Path -LiteralPath $gitDir) -and (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Info "Updating via git..."
+        $pullOutput = & git -C $ScriptRoot pull --ff-only 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $pullOutput = & git -C $ScriptRoot pull --ff-only origin main 2>&1
+        }
+        $pullOutput | Out-Host
+        if ($LASTEXITCODE -eq 0) {
+            Write-Info "Git update completed."
+            return $true
+        }
+        Write-Warn "Git pull failed (exit code $LASTEXITCODE). Trying ZIP download from GitHub..."
+    }
+
+    $tempBase = [System.IO.Path]::GetTempPath()
+    $zipPath = Join-Path $tempBase ('game-populator-update-' + [Guid]::NewGuid().ToString('N') + '.zip')
+    $extractRoot = Join-Path $tempBase ('game-populator-update-' + [Guid]::NewGuid().ToString('N'))
+
+    try {
+        Write-Info "Downloading: $script:GamePopulatorMainZipUrl"
+        try {
+            Invoke-WebRequest -Uri $script:GamePopulatorMainZipUrl -OutFile $zipPath -UseBasicParsing
+        } catch {
+            Write-Warn "Download failed: $($_.Exception.Message)"
+            return $false
+        }
+
+        if (-not (Test-Path -LiteralPath $zipPath)) {
+            Write-Warn "Download did not produce an archive file."
+            return $false
+        }
+
+        New-Item -Path $extractRoot -ItemType Directory -Force | Out-Null
+        try {
+            Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
+        } catch {
+            Write-Warn "Could not extract archive: $($_.Exception.Message)"
+            return $false
+        }
+
+        $innerFolder = @(Get-ChildItem -LiteralPath $extractRoot -Directory -ErrorAction SilentlyContinue) | Select-Object -First 1
+        if (-not $innerFolder) {
+            Write-Warn "Update archive had an unexpected layout."
+            return $false
+        }
+
+        Write-Info "Installing files into:`n  $ScriptRoot"
+        foreach ($item in @(Get-ChildItem -LiteralPath $innerFolder.FullName -Force -ErrorAction SilentlyContinue)) {
+            $destLeaf = $item.Name
+            $destPath = Join-Path $ScriptRoot $destLeaf
+            if ($protectedLeaves.Contains($destLeaf) -and (Test-Path -LiteralPath $destPath)) {
+                Write-Host "Keeping existing: " -NoNewline -ForegroundColor DarkGray
+                Write-Host $destLeaf -ForegroundColor Gray
+                continue
+            }
+            Copy-Item -LiteralPath $item.FullName -Destination $destPath -Recurse -Force
+        }
+
+        Write-Info "Update from ZIP completed."
+        return $true
+    } finally {
+        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Restore-GamePopulatorTemplatesFromGitHub {
+    param(
+        [Parameter(Mandatory = $true)][string]$ScriptRoot,
+        [Parameter(Mandatory = $true)][string[]]$TemplateFileNames
+    )
+    if (-not $TemplateFileNames -or $TemplateFileNames.Count -eq 0) {
+        return $true
+    }
+
+    $tempBase = [System.IO.Path]::GetTempPath()
+    $zipPath = Join-Path $tempBase ('game-populator-templates-' + [Guid]::NewGuid().ToString('N') + '.zip')
+    $extractRoot = Join-Path $tempBase ('game-populator-templates-' + [Guid]::NewGuid().ToString('N'))
+
+    try {
+        Write-Info "Downloading: $script:GamePopulatorMainZipUrl"
+        try {
+            Invoke-WebRequest -Uri $script:GamePopulatorMainZipUrl -OutFile $zipPath -UseBasicParsing
+        } catch {
+            Write-Warn "Download failed: $($_.Exception.Message)"
+            return $false
+        }
+
+        if (-not (Test-Path -LiteralPath $zipPath)) {
+            Write-Warn "Download did not produce an archive file."
+            return $false
+        }
+
+        New-Item -Path $extractRoot -ItemType Directory -Force | Out-Null
+        try {
+            Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
+        } catch {
+            Write-Warn "Could not extract archive: $($_.Exception.Message)"
+            return $false
+        }
+
+        $innerFolder = @(Get-ChildItem -LiteralPath $extractRoot -Directory -ErrorAction SilentlyContinue) | Select-Object -First 1
+        if (-not $innerFolder) {
+            Write-Warn "Archive had an unexpected layout."
+            return $false
+        }
+
+        foreach ($requestedName in $TemplateFileNames) {
+            $srcFile = Join-Path $innerFolder.FullName $requestedName
+            if (-not (Test-Path -LiteralPath $srcFile -PathType Leaf)) {
+                Write-Warn "Template not found in GitHub archive: $requestedName"
+                return $false
+            }
+            $destFile = Join-Path $ScriptRoot $requestedName
+            Copy-Item -LiteralPath $srcFile -Destination $destFile -Force
+            Write-Info ("Restored template: {0}" -f $requestedName)
+        }
+        return $true
+    } finally {
+        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Format-TextPreview {
@@ -382,6 +578,7 @@ function New-ShareDrive {
         [string]$User,
         [SecureString]$Password
     )
+    Test-SmbEstablishedCredentialCompatibility -UncRoot $Root -Purpose 'this console source' -ShareUser $User -SharePassword $Password
     $driveName = "SRC{0}" -f ([Guid]::NewGuid().ToString('N').Substring(0, 6))
     if ([string]::IsNullOrWhiteSpace($User) -or $null -eq $Password) {
         New-PSDrive -Name $driveName -PSProvider FileSystem -Root $Root -ErrorAction Stop -Scope Global | Out-Null
@@ -389,7 +586,33 @@ function New-ShareDrive {
         $cred = New-Object System.Management.Automation.PSCredential ($User, $Password)
         New-PSDrive -Name $driveName -PSProvider FileSystem -Root $Root -Credential $cred -ErrorAction Stop -Scope Global | Out-Null
     }
+    Register-SmbEstablishmentForUncPath -UncRoot $Root -ShareUser $User -SharePassword $Password
     return "$driveName`:\"
+}
+
+function Test-ConsoleSourcePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [string]$User,
+        [SecureString]$Password
+    )
+    $drivePath = $null
+    try {
+        $drivePath = New-ShareDrive -Root $Root -User $User -Password $Password
+        if (-not (Test-Path -LiteralPath $drivePath)) {
+            return @{ OK = $false; Error = 'Mapped drive root is not accessible.' }
+        }
+        return @{ OK = $true; Error = $null }
+    } catch {
+        $hint = Expand-SmbConnectErrorHint -RawMessage $_.Exception.Message -UncPath $Root
+        $combined = $_.Exception.Message
+        if ($hint) { $combined = $combined + ' ' + $hint }
+        return @{ OK = $false; Error = $combined }
+    } finally {
+        if ($drivePath) {
+            Remove-ShareDrive -DrivePath $drivePath
+        }
+    }
 }
 
 function Copy-ItemsFlatNoOverwrite {
@@ -520,17 +743,6 @@ function Add-RegionCount {
     return $region
 }
 
-function Add-RegionCountWithRegion {
-    param(
-        [Parameter(Mandatory = $true)][hashtable]$Counts,
-        [Parameter(Mandatory = $true)][string]$Region,
-        [Parameter(Mandatory = $true)][bool]$Organize
-    )
-    if (-not $Organize -or -not $Region) { return }
-    if (-not $Counts.ContainsKey($Region)) { $Counts[$Region] = 0 }
-    $Counts[$Region]++
-}
-
 function Get-RegionDestRoot {
     param(
         [Parameter(Mandatory = $true)][string]$BasePath,
@@ -562,40 +774,6 @@ function Get-ContainingRegionFolderName {
         $current = $current.Parent
     }
     return $null
-}
-
-function Move-SgbTaggedFilesToDestination {
-    param(
-        [Parameter(Mandatory = $true)][string]$SourceFolderPath,
-        [Parameter(Mandatory = $true)][string]$DestFolderPath,
-        [Parameter(Mandatory = $true)][bool]$Organize,
-        [string]$ProgressConsoleName,
-        [System.Diagnostics.Stopwatch]$ProgressStopwatch
-    )
-    if (-not (Test-Path -LiteralPath $SourceFolderPath -PathType Container)) { return }
-
-    $files = @(Get-ChildItem -LiteralPath $SourceFolderPath -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
-        $_.Name -imatch '\(SGB'
-    })
-
-    foreach ($file in $files) {
-        if ($ProgressConsoleName -and $ProgressStopwatch) {
-            Update-OrganizeProgress -ConsoleName $ProgressConsoleName -Stopwatch $ProgressStopwatch
-            Write-OrganizeProgressLine -ConsoleName $ProgressConsoleName -Elapsed $ProgressStopwatch.Elapsed
-        }
-        $destRoot = Get-RegionDestRoot -BasePath $DestFolderPath -Name $file.Name -Organize $Organize
-        if (-not (Test-Path -LiteralPath $destRoot -PathType Container)) {
-            New-Item -Path $destRoot -ItemType Directory -Force | Out-Null
-        }
-        $destFile = Join-Path $destRoot $file.Name
-        $sourceFull = [System.IO.Path]::GetFullPath($file.FullName)
-        $destFull = [System.IO.Path]::GetFullPath($destFile)
-        if ($sourceFull -ieq $destFull) { continue }
-        if (Test-Path -LiteralPath $destFile) { continue }
-        Move-Item -LiteralPath $file.FullName -Destination $destFile
-    }
-
-    Remove-EmptyFolders -RootPath $SourceFolderPath
 }
 
 function Move-RegionInFolder {
@@ -837,123 +1015,59 @@ function Remove-DestinationFilesNotMatchingExtensions {
 function Invoke-ExistingDestination {
     param(
         [Parameter(Mandatory = $true)][string]$FolderPath,
-        [Parameter(Mandatory = $true)][string]$Mode,
         [Parameter(Mandatory = $true)][bool]$Organize,
         [Parameter(Mandatory = $true)][string[]]$ArchiveExtensions
     )
     if (-not (Test-Path -LiteralPath $FolderPath -PathType Container)) { return }
 
-    if ($Mode -eq 'Raw') {
-        $archives = @(Get-ChildItem -LiteralPath $FolderPath -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
-            $ArchiveExtensions -contains $_.Extension.ToLowerInvariant()
-        })
-        foreach ($archive in $archives) {
+    $archives = @(Get-ChildItem -LiteralPath $FolderPath -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
+        $ArchiveExtensions -contains $_.Extension.ToLowerInvariant()
+    })
+    foreach ($archive in $archives) {
+        try {
+            Initialize-7z
+            $tempExtract = Join-Path $TempRoot ([Guid]::NewGuid().ToString('N'))
+            New-Item -Path $tempExtract -ItemType Directory -Force | Out-Null
             try {
-                Initialize-7z
-                $tempExtract = Join-Path $TempRoot ([Guid]::NewGuid().ToString('N'))
-                New-Item -Path $tempExtract -ItemType Directory -Force | Out-Null
-                try {
-                    Invoke-7z -Arguments @('x', '-y', '-bso1', '-bse1', '-bsp1', "-o$tempExtract", $archive.FullName) -ProgressLabel "Extracting" -ProgressName $archive.Name
-                    $extractedItems = @(Get-ChildItem -LiteralPath $tempExtract -Force -ErrorAction SilentlyContinue)
-                    if (-not $extractedItems -or $extractedItems.Count -eq 0) { continue }
-                    $allExtractedFiles = @(Get-ChildItem -LiteralPath $tempExtract -Recurse -File -ErrorAction SilentlyContinue)
-                    $hasBin = @($allExtractedFiles | Where-Object { $_.Extension -ieq '.bin' }).Count -gt 0
-                    $hasCue = @($allExtractedFiles | Where-Object { $_.Extension -ieq '.cue' }).Count -gt 0
-                    $isBinCueArchive = ($hasBin -and $hasCue)
-                    $region = Get-RegionFromFiles -Files $(if ($isBinCueArchive) { $allExtractedFiles } else { $extractedItems })
-                    $destRoot = Get-RegionDestRootFromRegion -BasePath $FolderPath -Region $region -Organize $Organize
-                    if (-not (Test-Path -LiteralPath $destRoot)) {
-                        New-Item -Path $destRoot -ItemType Directory -Force | Out-Null
+                Invoke-7z -Arguments @('x', '-y', '-bso1', '-bse1', '-bsp1', "-o$tempExtract", $archive.FullName) -ProgressLabel "Extracting" -ProgressName $archive.Name
+                $extractedItems = @(Get-ChildItem -LiteralPath $tempExtract -Force -ErrorAction SilentlyContinue)
+                if (-not $extractedItems -or $extractedItems.Count -eq 0) { continue }
+                $allExtractedFiles = @(Get-ChildItem -LiteralPath $tempExtract -Recurse -File -ErrorAction SilentlyContinue)
+                $hasBin = @($allExtractedFiles | Where-Object { $_.Extension -ieq '.bin' }).Count -gt 0
+                $hasCue = @($allExtractedFiles | Where-Object { $_.Extension -ieq '.cue' }).Count -gt 0
+                $isBinCueArchive = ($hasBin -and $hasCue)
+                $region = Get-RegionFromFiles -Files $(if ($isBinCueArchive) { $allExtractedFiles } else { $extractedItems })
+                $destRoot = Get-RegionDestRootFromRegion -BasePath $FolderPath -Region $region -Organize $Organize
+                if (-not (Test-Path -LiteralPath $destRoot)) {
+                    New-Item -Path $destRoot -ItemType Directory -Force | Out-Null
+                }
+                if ($isBinCueArchive) {
+                    $gameFolderName = [System.IO.Path]::GetFileNameWithoutExtension($archive.Name)
+                    $destGameFolder = Join-Path $destRoot $gameFolderName
+                    if (-not (Test-Path -LiteralPath $destGameFolder)) {
+                        New-Item -Path $destGameFolder -ItemType Directory -Force | Out-Null
                     }
-                    if ($isBinCueArchive) {
-                        $gameFolderName = [System.IO.Path]::GetFileNameWithoutExtension($archive.Name)
-                        $destGameFolder = Join-Path $destRoot $gameFolderName
-                        if (-not (Test-Path -LiteralPath $destGameFolder)) {
-                            New-Item -Path $destGameFolder -ItemType Directory -Force | Out-Null
-                        }
-                        $filesToCopy = @($allExtractedFiles)
-                        if ($filesToCopy.Count -gt 0) {
-                            Copy-ItemsFlatNoOverwrite -Items $filesToCopy -DestRoot $destGameFolder | Out-Null
-                        }
-                    } else {
-                        $filesToCopy = @($extractedItems | Where-Object { -not $_.PSIsContainer })
-                        if ($filesToCopy.Count -gt 0) {
-                            Copy-ItemsFlatNoOverwrite -Items $filesToCopy -DestRoot $destRoot | Out-Null
-                        }
+                    $filesToCopy = @($allExtractedFiles)
+                    if ($filesToCopy.Count -gt 0) {
+                        Copy-ItemsFlatNoOverwrite -Items $filesToCopy -DestRoot $destGameFolder | Out-Null
                     }
-                } finally {
-                    if (Test-Path -LiteralPath $tempExtract) {
-                        Remove-Item -LiteralPath $tempExtract -Recurse -Force
+                } else {
+                    $filesToCopy = @($extractedItems | Where-Object { -not $_.PSIsContainer })
+                    if ($filesToCopy.Count -gt 0) {
+                        Copy-ItemsFlatNoOverwrite -Items $filesToCopy -DestRoot $destRoot | Out-Null
                     }
                 }
-            } catch {
-                $lineInfo = $_.InvocationInfo.ScriptLineNumber
-                $msg = Get-CopyErrorMessage -ExceptionMessage $_.Exception.Message
-                Add-Error ("{0}: {1} (line {2})" -f $archive.Name, $msg, $lineInfo)
             } finally {
-                Remove-Item -LiteralPath $archive.FullName -Force -ErrorAction SilentlyContinue
-            }
-        }
-    } else {
-        $archiveSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-        foreach ($ext in $ArchiveExtensions) { $archiveSet.Add($ext) | Out-Null }
-        $archiveSet.Add('.chd') | Out-Null
-
-        $files = @(Get-ChildItem -LiteralPath $FolderPath -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
-            -not $archiveSet.Contains($_.Extension)
-        })
-        foreach ($file in $files) {
-            if ($file.Extension -ieq '.rom') {
-                $fileFull = [System.IO.Path]::GetFullPath($file.FullName)
-                if ($file.Name -imatch 'boot') {
-                    $rootDest = Join-Path $FolderPath $file.Name
-                    $rootDestFull = [System.IO.Path]::GetFullPath($rootDest)
-                    if ($fileFull -ine $rootDestFull -and -not (Test-Path -LiteralPath $rootDest)) {
-                        Move-Item -LiteralPath $file.FullName -Destination $rootDest
-                    }
-                    continue
-                }
-                $romDestRoot = Get-RegionDestRoot -BasePath $FolderPath -Name $file.Name -Organize $Organize
-                if (-not (Test-Path -LiteralPath $romDestRoot)) {
-                    New-Item -Path $romDestRoot -ItemType Directory -Force | Out-Null
-                }
-                $romDestFile = Join-Path $romDestRoot $file.Name
-                $romDestFull = [System.IO.Path]::GetFullPath($romDestFile)
-                if ($fileFull -ieq $romDestFull) { continue }
-                if (Test-Path -LiteralPath $romDestFile) { continue }
-                Move-Item -LiteralPath $file.FullName -Destination $romDestFile
-                continue
-            }
-            $zipRoot = Get-RegionDestRoot -BasePath $FolderPath -Name $file.Name -Organize $Organize
-            if (-not (Test-Path -LiteralPath $zipRoot)) {
-                New-Item -Path $zipRoot -ItemType Directory -Force | Out-Null
-            }
-            $destFile = Join-Path $zipRoot ($file.BaseName + '.zip')
-            if (Test-Path -LiteralPath $destFile) {
-                Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
-                continue
-            }
-            $tempZip = Join-Path $TempRoot ([Guid]::NewGuid().ToString('N') + '.zip')
-            try {
-                Initialize-7z
-                Invoke-7z -Arguments (@('a') + $zipCompressionArgs + @(
-                    '-mmt=on'
-                    '-bso1'
-                    '-bse1'
-                    '-bsp1'
-                    $tempZip
-                    $file.FullName
-                )) -ProgressLabel "Compressing" -ProgressName ($file.BaseName + '.zip')
-                Copy-Item -LiteralPath $tempZip -Destination $destFile
-                Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
-            } catch {
-                $msg = Get-CopyErrorMessage -ExceptionMessage $_.Exception.Message
-                Add-Error ("{0}: {1}" -f $file.Name, $msg)
-            } finally {
-                if (Test-Path -LiteralPath $tempZip) {
-                    Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+                if (Test-Path -LiteralPath $tempExtract) {
+                    Remove-Item -LiteralPath $tempExtract -Recurse -Force
                 }
             }
+        } catch {
+            $lineInfo = $_.InvocationInfo.ScriptLineNumber
+            $msg = Get-CopyErrorMessage -ExceptionMessage $_.Exception.Message
+            Add-Error ("{0}: {1} (line {2})" -f $archive.Name, $msg, $lineInfo)
+        } finally {
+            Remove-Item -LiteralPath $archive.FullName -Force -ErrorAction SilentlyContinue
         }
     }
 }
@@ -1032,15 +1146,192 @@ function Resolve-DestinationPath {
     return $p
 }
 
+function Resolve-DestinationGamesSubfolder {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $p = $Path.Trim()
+    if ([string]::IsNullOrWhiteSpace($p)) { return $p }
+    $p = $p.TrimEnd('\', '/')
+    if ([string]::IsNullOrWhiteSpace($p)) { return $Path }
+    $leaf = Split-Path -Path $p -Leaf
+    if ($leaf -ieq 'games') {
+        return $p
+    }
+    return (Join-Path $p 'games')
+}
+
+# Windows SMB: one authenticated identity per server (\\host). Tracking avoids slow failing retries when creds clash.
+function Get-SmbCredFingerprintFromShareCred {
+    param([string]$User, [SecureString]$Password)
+    if ([string]::IsNullOrWhiteSpace($User) -or $null -eq $Password) {
+        return '[implicit]'
+    }
+    return $User.Trim().ToLowerInvariant()
+}
+
+function Get-FriendlyDescriptionForSmbCredFingerprint {
+    param([Parameter(Mandatory)][string]$Fingerprint)
+    if ($Fingerprint -eq '[implicit]') {
+        return 'logged-on Windows credentials (no ShareUser/SharePassword in settings)'
+    }
+    return ('stored SMB credentials (user ''' + $Fingerprint + ''')')
+}
+
+function Initialize-SmbEstablishmentTracking {
+    if ($null -eq $script:SmbEstablishedAuthFingerprintsByUncServer) {
+        $script:SmbEstablishedAuthFingerprintsByUncServer = @{}
+    }
+}
+
+function Get-CanonicalUncServerPrefix {
+    param([Parameter(Mandatory)][string]$UncResolvedPath)
+    $p = $UncResolvedPath.Trim()
+    if (-not $p.StartsWith('\\')) { return $null }
+    $rest = $p.Substring(2)
+    $slash = $rest.IndexOf('\')
+    if ($slash -lt 0) {
+        if ([string]::IsNullOrWhiteSpace($rest)) { return $null }
+        return ('\\' + $rest.Trim().TrimEnd('\').ToUpperInvariant())
+    }
+    $server = $rest.Substring(0, $slash)
+    if ([string]::IsNullOrWhiteSpace($server)) { return $null }
+    return ('\\' + $server.Trim().ToUpperInvariant())
+}
+
+function Expand-SmbConnectErrorHint {
+    param([string]$RawMessage, [string]$UncPath)
+    if ([string]::IsNullOrWhiteSpace($RawMessage)) { return '' }
+    if ($RawMessage -notmatch '(?i)multiple connections') {
+        return ''
+    }
+    $srvRoot = Resolve-DestinationPath -Path $UncPath
+    $pfx = Get-CanonicalUncServerPrefix -UncResolvedPath $srvRoot
+    if (-not $pfx) { return 'Use one SMB username (or omit ShareUser/password for all paths) per server.' }
+    $hostOnly = $pfx.Substring(2)
+    $netWildPath = '\\' + $hostOnly + '\*'
+    return ('Use the same SMB account for UNC paths under \\{0}, or disconnect first: net use "{1}" /delete /yes  (then retry).' -f $hostOnly, $netWildPath)
+}
+
+function Test-SmbEstablishedCredentialCompatibility {
+    param(
+        [Parameter(Mandatory)][string]$UncRoot,
+        [Parameter(Mandatory)][string]$Purpose,
+        [string]$ShareUser,
+        [SecureString]$SharePassword
+    )
+    $srvRoot = Resolve-DestinationPath -Path $UncRoot
+    $serverPref = Get-CanonicalUncServerPrefix -UncResolvedPath $srvRoot
+    if (-not $serverPref) { return }
+
+    Initialize-SmbEstablishmentTracking
+
+    $nowFp = Get-SmbCredFingerprintFromShareCred -User $ShareUser -Password $SharePassword
+    $priorFp = $script:SmbEstablishedAuthFingerprintsByUncServer[$serverPref]
+    if (-not $priorFp) { return }
+    if ($priorFp -eq $nowFp) { return }
+
+    $hostDisp = $serverPref.Substring(2)
+    $netWild = '\\' + $hostDisp + '\*'
+    $msg = (
+        ("Cannot open {0} using {1} for \\{2}: SMB already uses {3}." -f $Purpose,
+            (Get-FriendlyDescriptionForSmbCredFingerprint -Fingerprint $nowFp),
+            $hostDisp,
+            (Get-FriendlyDescriptionForSmbCredFingerprint -Fingerprint $priorFp)) +
+            (" Disconnect or remap: net use ""{0}"" /delete /yes  Or use identical ShareUser/password (or omit both) for the destination and every UNC source under \\{1}." -f $netWild, $hostDisp)
+    )
+    throw [System.InvalidOperationException]::new($msg)
+}
+
+function Register-SmbEstablishmentForUncPath {
+    param(
+        [Parameter(Mandatory)][string]$UncRoot,
+        [string]$ShareUser,
+        [SecureString]$SharePassword
+    )
+    $srvRoot = Resolve-DestinationPath -Path $UncRoot
+    $serverPref = Get-CanonicalUncServerPrefix -UncResolvedPath $srvRoot
+    if (-not $serverPref) { return }
+
+    Initialize-SmbEstablishmentTracking
+    $script:SmbEstablishedAuthFingerprintsByUncServer[$serverPref] =
+        Get-SmbCredFingerprintFromShareCred -User $ShareUser -Password $SharePassword
+}
+
+function Get-UniqueUncHostNamesFromPaths {
+    param([Parameter(Mandatory)][string[]]$PathCandidates)
+    $set = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($raw in $PathCandidates) {
+        if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+        $r = $null
+        try { $r = Resolve-DestinationPath -Path $raw.Trim() } catch { continue }
+        if (-not $r -or -not $r.StartsWith('\\')) { continue }
+        $pfx = Get-CanonicalUncServerPrefix -UncResolvedPath $r
+        if ($pfx) { $null = $set.Add($pfx.Substring(2)) }
+    }
+    @($set)
+}
+
+function Disconnect-GamePopulatorNetworkMappings {
+    param(
+        [Parameter(Mandatory)][string[]]$UncPathCandidates,
+        [switch]$Quiet
+    )
+    if (-not $Quiet) {
+        Write-Info 'Removing temporary PSDrives created by this script (names matching SRC###### / DST######)...'
+    }
+    foreach ($d in @(Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)) {
+        if ($d.Name -match '^(SRC|DST)[0-9a-fA-F]{6}$') {
+            Remove-PSDrive -Name $d.Name -Force -Scope Global -ErrorAction SilentlyContinue
+            if (-not $Quiet) {
+                Write-Host ("  Removed PSDrive {0}" -f $d.Name) -ForegroundColor DarkGray
+            }
+        }
+    }
+    $hosts = Get-UniqueUncHostNamesFromPaths -PathCandidates $UncPathCandidates
+    if (-not $Quiet) {
+        if ($hosts.Count -eq 0) {
+            Write-Info 'No UNC paths in the supplied list — script PSDrives cleared only.'
+        } else {
+            Write-Info ("Running net use /delete per UNC server from your config: {0}" -f ($hosts -join ', '))
+        }
+    }
+    foreach ($h in $hosts) {
+        $wild = '\\' + $h + '\*'
+        $out = & net.exe use $wild /delete /yes 2>&1
+        if (-not $Quiet) {
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host ("  Disconnected: net use ""{0}""" -f $wild) -ForegroundColor DarkGray
+            } else {
+                $msg = ($out | Where-Object { $_ } | ForEach-Object { $_.ToString().Trim() }) -join ' '
+                Write-Host ("  net use for ""{0}"" exited {1} ({2})" -f $wild, $LASTEXITCODE, $msg) -ForegroundColor DarkGray
+            }
+        }
+    }
+    $script:SmbEstablishedAuthFingerprintsByUncServer = @{}
+    if (-not $Quiet) {
+        Write-Info 'Cleared in-script SMB credential tracking (per \\server).'
+    }
+}
+
 function Initialize-DestinationRoot {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [string]$User,
-        [SecureString]$Password
+        [SecureString]$Password,
+        [switch]$Quiet
     )
     $Path = Resolve-DestinationPath -Path $Path
     if (-not $Path.StartsWith('\\')) {
         return @{ Path = $Path; Drive = $null }
+    }
+    if ($script:ScriptDiag) {
+        Write-Host "[diag] Initialize-DestinationRoot: mapping UNC (this can block if the server is down)" -ForegroundColor Magenta
+        Write-Host "[diag]   $Path" -ForegroundColor Magenta
+        Invoke-OutputFlush
+    }
+    Test-SmbEstablishedCredentialCompatibility -UncRoot $Path -Purpose 'destination' -ShareUser $User -SharePassword $Password
+
+    if (-not $Quiet) {
+        Write-Info "Connecting to destination share (UNC can take a moment if the server is slow or unreachable):`n  $Path"
     }
     $driveName = "DST{0}" -f ([Guid]::NewGuid().ToString('N').Substring(0, 6))
     if ([string]::IsNullOrWhiteSpace($User) -or $null -eq $Password) {
@@ -1049,6 +1340,7 @@ function Initialize-DestinationRoot {
         $cred = New-Object System.Management.Automation.PSCredential ($User, $Password)
         New-PSDrive -Name $driveName -PSProvider FileSystem -Root $Path -Credential $cred -ErrorAction Stop -Scope Global | Out-Null
     }
+    Register-SmbEstablishmentForUncPath -UncRoot $Path -ShareUser $User -SharePassword $Password
     return @{ Path = "$driveName`:\\"; Drive = $driveName }
 }
 
@@ -1056,26 +1348,6 @@ function Get-DirectorySize {
     param([Parameter(Mandatory = $true)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return 0 }
     return (Get-ChildItem -LiteralPath $Path -Recurse -File | Measure-Object -Property Length -Sum).Sum
-}
-
-function ConvertTo-ZipCompressionArgs {
-    param([Parameter(Mandatory = $true)][string[]]$Args)
-    $normalized = @()
-    foreach ($arg in $Args) {
-        if ($arg -ieq '-m0=Deflate64') {
-            $normalized += '-mm=Deflate64'
-        } elseif ($arg -ieq '-m0=Deflate') {
-            $normalized += '-mm=Deflate'
-        } elseif ($arg -match '^(-tzip|-mx=\d+|-mm=Deflate64|-mm=Deflate)$') {
-            $normalized += $arg
-        } else {
-            continue
-        }
-    }
-    if (-not ($normalized -match '^-tzip$')) { $normalized += '-tzip' }
-    if (-not ($normalized -match '^-mx=\d+$')) { $normalized += '-mx=9' }
-    if (-not ($normalized -match '^-mm=Deflate64$|^-mm=Deflate$')) { $normalized += '-mm=Deflate' }
-    return $normalized
 }
 
 $script:errors = New-Object System.Collections.Generic.List[string]
