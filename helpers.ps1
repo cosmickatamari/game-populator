@@ -180,8 +180,11 @@ function Invoke-GamePopulatorSelfUpdate {
     foreach ($leaf in @('settings.json', 'sources.psd1', 'console-names.json')) {
         $protectedLeaves.Add($leaf) | Out-Null
     }
-    $prompt = "Download the latest script files from $script:GamePopulatorRepoUrl ? Existing config files (settings, sources, console names) are not overwritten."
-    if (-not (Read-YesNoDefaultYes $prompt)) {
+    Write-Host "`nThis will download the latest script files from " -NoNewline -ForegroundColor Yellow
+    Write-Host $script:GamePopulatorRepoUrl -NoNewline -ForegroundColor Green
+    Write-Host "?" -ForegroundColor Yellow
+    Write-Info "Existing config files (settings, sources, console names) are not overwritten."
+    if (-not (Read-YesNoDefaultNo 'OK to proceed?')) {
         return $false
     }
 
@@ -332,7 +335,8 @@ function Format-Size {
 function Format-Elapsed {
     param([Parameter(Mandatory = $true)][TimeSpan]$Elapsed)
     if ($Elapsed.Days -gt 0) {
-        return ("{0} day {1:00}:{2:00}:{3:00}" -f $Elapsed.Days, $Elapsed.Hours, $Elapsed.Minutes, $Elapsed.Seconds)
+        $dayWord = if ($Elapsed.Days -eq 1) { 'day' } else { 'days' }
+        return ("{0} {1} {2:00}:{3:00}:{4:00}" -f $Elapsed.Days, $dayWord, $Elapsed.Hours, $Elapsed.Minutes, $Elapsed.Seconds)
     }
     return ("{0:00}:{1:00}:{2:00}" -f $Elapsed.Hours, $Elapsed.Minutes, $Elapsed.Seconds)
 }
@@ -994,7 +998,9 @@ function Remove-DestinationFilesNotMatchingExtensions {
         [Parameter(Mandatory = $true)][string]$FolderPath,
         [Parameter(Mandatory = $true)][string[]]$AllowedExtensions
     )
-    if (-not (Test-Path -LiteralPath $FolderPath -PathType Container)) { return }
+    if (-not (Test-Path -LiteralPath $FolderPath -PathType Container)) {
+        return [pscustomobject]@{ FilesRemoved = 0 }
+    }
     $allowedSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($ext in $AllowedExtensions) {
         $e = $ext.Trim()
@@ -1004,12 +1010,18 @@ function Remove-DestinationFilesNotMatchingExtensions {
     $allowedSet.Add('.rom') | Out-Null
     $allowedSet.Add('.zip') | Out-Null
 
+    $removed = 0
     $files = @(Get-ChildItem -LiteralPath $FolderPath -File -Recurse -ErrorAction SilentlyContinue)
     foreach ($file in $files) {
         if (-not $allowedSet.Contains($file.Extension)) {
-            Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+            try {
+                Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+                $removed++
+            } catch {
+            }
         }
     }
+    return [pscustomobject]@{ FilesRemoved = $removed }
 }
 
 function Invoke-ExistingDestination {
@@ -1112,15 +1124,23 @@ function Add-NameToSet {
 
 function Remove-EmptyFolders {
     param([Parameter(Mandatory = $true)][string]$RootPath)
-    if (-not (Test-Path -LiteralPath $RootPath -PathType Container)) { return }
+    if (-not (Test-Path -LiteralPath $RootPath -PathType Container)) {
+        return [pscustomobject]@{ FoldersRemoved = 0 }
+    }
     $dirs = Get-ChildItem -LiteralPath $RootPath -Directory -Recurse -ErrorAction SilentlyContinue |
         Sort-Object FullName -Descending
+    $removed = 0
     foreach ($dir in $dirs) {
         $hasItems = (Get-ChildItem -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0
         if (-not $hasItems) {
-            Remove-Item -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue
+            try {
+                Remove-Item -LiteralPath $dir.FullName -Force -ErrorAction Stop
+                $removed++
+            } catch {
+            }
         }
     }
+    return [pscustomobject]@{ FoldersRemoved = $removed }
 }
 
 function Remove-ShareDrive {
@@ -1312,6 +1332,57 @@ function Disconnect-GamePopulatorNetworkMappings {
     }
 }
 
+function Start-DestinationUncConnectionCountdownDisplay {
+    param(
+        [Parameter(Mandatory = $true)][int]$AdvisoryLimitSeconds
+    )
+    return (Start-ThreadJob -ScriptBlock {
+        param($Limit)
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        while ($true) {
+            $elapsed = [int][math]::Floor($sw.Elapsed.TotalSeconds)
+            if ($elapsed -lt $Limit) {
+                $rem = $Limit - $elapsed
+                $line = "Connecting to destination... {0}s elapsed ({1}s to advisory limit)   " -f $elapsed, $rem
+            } else {
+                $line = "Connecting to destination... {0}s elapsed (past {1}s — waiting for Windows SMB; Ctrl+C to stop)   " -f $elapsed, $Limit
+            }
+            try {
+                [Console]::Error.Write("`r{0,-80}" -f $line)
+                [Console]::Error.Flush()
+            } catch { }
+            Start-Sleep -Milliseconds 800
+        }
+    } -ArgumentList $AdvisoryLimitSeconds)
+}
+
+function Stop-GamePopulatorBackgroundStatusDisplay {
+    param([System.Management.Automation.Job]$Job)
+    if ($Job) {
+        Stop-Job $Job -ErrorAction SilentlyContinue
+        Remove-Job $Job -Force -ErrorAction SilentlyContinue
+    }
+    try {
+        [Console]::Error.Write("`r{0,-80}`n" -f '')
+        [Console]::Error.Flush()
+    } catch { }
+}
+
+function Start-CleanupActivityElapsedDisplay {
+    return (Start-ThreadJob -ScriptBlock {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        while ($true) {
+            $elapsed = [int][math]::Floor($sw.Elapsed.TotalSeconds)
+            $line = "Destination cleanup (scan/remove)... {0}s elapsed   " -f $elapsed
+            try {
+                [Console]::Error.Write("`r{0,-80}" -f $line)
+                [Console]::Error.Flush()
+            } catch { }
+            Start-Sleep -Milliseconds 900
+        }
+    })
+}
+
 function Initialize-DestinationRoot {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -1331,7 +1402,9 @@ function Initialize-DestinationRoot {
     Test-SmbEstablishedCredentialCompatibility -UncRoot $Path -Purpose 'destination' -ShareUser $User -SharePassword $Password
 
     if (-not $Quiet) {
-        Write-Info "Connecting to destination share (UNC can take a moment if the server is slow or unreachable):`n  $Path"
+        Write-Host ''
+        Write-Host 'Connecting to destination share (UNC can take a moment if the server is slow or unreachable):' -ForegroundColor White
+        Write-Host ("  $Path") -ForegroundColor Green
     }
     $driveName = "DST{0}" -f ([Guid]::NewGuid().ToString('N').Substring(0, 6))
     if ([string]::IsNullOrWhiteSpace($User) -or $null -eq $Password) {

@@ -53,8 +53,8 @@ try {
 } catch {
     Write-Host ""
 }
-Write-Host "=== [ $script:ScriptName ]===" -ForegroundColor Blue
-Write-Host "=== [ Version $script:ScriptVersion ] ===" -ForegroundColor Blue
+Write-Host "=== [ $script:ScriptName ]===" -ForegroundColor DarkGreen
+Write-Host "=== [ Version $script:ScriptVersion ] ===" -ForegroundColor DarkGreen
 Write-Host ""
 Write-ScriptDiag "Script: $PSCommandPath"
 Write-ScriptDiag "After banner"
@@ -1011,7 +1011,7 @@ function Invoke-TurnOnOffSystemsMenu {
         Write-Host "  Q. Previous Menu" -ForegroundColor White
         Write-Host ""
         Invoke-OutputFlush
-        $sub = (Read-Host "Select 1-2, Q, or Enter to finish [Q]uit").Trim()
+        $sub = (Read-Host "Select 1-2, Q, or [Enter] to [Q]uit").Trim()
         if ([string]::IsNullOrWhiteSpace($sub) -or $sub -match '^(?i)q$') {
             Write-Host ""
             Write-Host ""
@@ -1024,8 +1024,8 @@ function Invoke-TurnOnOffSystemsMenu {
                 while ($true) {
                     if ($paintToggleList) {
                         Write-Host ''
-                        Write-Host '  Enabled = white' -ForegroundColor White
-                        Write-Host '  Disabled = red' -ForegroundColor Red
+                        Write-Host '  Enabled   = white' -ForegroundColor White
+                        Write-Host '  Disabled  = red' -ForegroundColor Red
                         Write-Host ''
                         Write-Host '  Defined Systems:' -ForegroundColor DarkCyan
                         $snapToggle = @(Get-SourcesPsd1UnifiedAlphabetical -LiteralPath $SourcesLiteralPath -DisplayNameMap $DisplayNameMap)
@@ -1036,9 +1036,22 @@ function Invoke-TurnOnOffSystemsMenu {
                         Write-NumberedSourcesConsoleBlockList -Blocks $snapToggle -DisplayNameMap $DisplayNameMap -ColorEnabledState
                         $paintToggleList = $false
                     }
-                    Write-Host 'Numbers (comma-separated) toggle enabled/disabled status.  AO enables all · AF disables all · R refreshes the list · Q returns to the previous menu.' -ForegroundColor DarkYellow
+                    Write-Host 'Numbers (comma-separated)' -NoNewline -ForegroundColor White
+                    Write-Host ' toggle enabled/disabled status. ' -NoNewline -ForegroundColor DarkCyan
+                    Write-Host '(ex. ' -NoNewline -ForegroundColor DarkCyan
+                    Write-Host '1, 3, 4, 16...' -NoNewline -ForegroundColor White
+                    Write-Host ')' -ForegroundColor DarkCyan
+                    Write-Host 'AO' -NoNewline -ForegroundColor White
+                    Write-Host ' enables all systems · ' -NoNewline -ForegroundColor DarkCyan
+                    Write-Host 'AF' -NoNewline -ForegroundColor White
+                    Write-Host ' disables all systems' -ForegroundColor DarkCyan
+                    Write-Host 'R' -NoNewline -ForegroundColor White
+                    Write-Host ' refreshes the list · ' -NoNewline -ForegroundColor DarkCyan
+                    Write-Host 'Q' -NoNewline -ForegroundColor White
+                    Write-Host ' returns to the previous menu.' -ForegroundColor DarkCyan
+                    Write-Host ''
                     Invoke-OutputFlush
-                    $rawMain = Read-Host 'Number(s), AO, AF, R, Q, or Enter to [Q]uit'
+                    $rawMain = Read-Host 'Number(s), AO, AF, R, Q, or [Enter] to [Q]uit'
                     if ($null -eq $rawMain) { $rawMain = '' }
                     $rawTrim = $rawMain.Trim()
                     if ([string]::IsNullOrWhiteSpace($rawTrim) -or $rawTrim -match '^(?i)q$') {
@@ -1121,8 +1134,8 @@ function Invoke-TurnOnOffSystemsMenu {
                 while ($true) {
                     if ($paintPathList) {
                         Write-Host ''
-                        Write-Host '  Enabled = white' -ForegroundColor White
-                        Write-Host '  Disabled = red' -ForegroundColor Red
+                        Write-Host '  Enabled   = white' -ForegroundColor White
+                        Write-Host '  Disabled  = red' -ForegroundColor Red
                         Write-Host ''
                         Write-Host '  Defined Systems:' -ForegroundColor DarkCyan
                         $snapPath = @(Get-SourcesPsd1UnifiedAlphabetical -LiteralPath $SourcesLiteralPath -DisplayNameMap $DisplayNameMap)
@@ -1133,9 +1146,16 @@ function Invoke-TurnOnOffSystemsMenu {
                         Write-NumberedSourcesConsoleBlockList -Blocks $snapPath -DisplayNameMap $DisplayNameMap -ColorEnabledState
                         $paintPathList = $false
                     }
-                    Write-Host 'Enter console number · R refreshes the list · Q returns to the previous menu.' -ForegroundColor DarkYellow
+                    Write-Host 'Enter ' -NoNewline -ForegroundColor DarkCyan
+                    Write-Host 'console number' -NoNewline -ForegroundColor White
+                    Write-Host ' · ' -NoNewline -ForegroundColor DarkCyan
+                    Write-Host 'R' -NoNewline -ForegroundColor White
+                    Write-Host ' refreshes the list · ' -NoNewline -ForegroundColor DarkCyan
+                    Write-Host 'Q' -NoNewline -ForegroundColor White
+                    Write-Host ' returns to the previous menu.' -ForegroundColor DarkCyan
+                    Write-Host ''
                     Invoke-OutputFlush
-                    $rawPick = Read-Host 'Number, R, Q, or Enter to [Q]uit'
+                    $rawPick = Read-Host 'Number, R, Q, or [Enter] to [Q]uit'
                     if ($null -eq $rawPick) { $rawPick = '' }
                     $pickTrim = $rawPick.Trim()
                     if ([string]::IsNullOrWhiteSpace($pickTrim) -or $pickTrim -match '^(?i)q$') {
@@ -1147,11 +1167,11 @@ function Invoke-TurnOnOffSystemsMenu {
                     }
                     $numPick = 0
                     if (-not [int]::TryParse($pickTrim, [ref]$numPick)) {
-                        Write-Warn 'Enter a whole number, R, Q, or Enter to go back.'
+                        Write-Warn 'Enter a whole number, R, Q, or [Enter] to go back.'
                         continue
                     }
                     if ($numPick -lt 1 -or $numPick -gt $snapPath.Count) {
-                        Write-Warn ('Enter 1-{0}, R, Q, or Enter to go back.' -f $snapPath.Count)
+                        Write-Warn ('Only 1-{0} are valid numbers, R, Q, or [Enter] to go back.' -f $snapPath.Count)
                         continue
                     }
                     $sys = $snapPath[$numPick - 1]
@@ -1276,11 +1296,11 @@ function Invoke-EditSettingsJsonMenu {
             $num = $i + 1
             $disp = Format-SettingsJsonValueForDisplay -Value $ordered[$n]
             Write-Host ('  ' + ([string]$num).PadLeft(2) + '. ' + ([string]$n).PadRight($nameColW) + '  ') -NoNewline -ForegroundColor White
-            Write-Host $disp -ForegroundColor DarkYellow
+            Write-Host $disp -ForegroundColor Yellow
         }
         Write-Host ""
         Invoke-OutputFlush
-        $pick = (Read-Host "Number to edit, or [Q]uit").Trim()
+        $pick = (Read-Host "Number, or [Enter] to [Q]uit").Trim()
         if ([string]::IsNullOrWhiteSpace($pick) -or $pick -match '^(?i)q(uit)?$') {
             return
         }
@@ -1345,16 +1365,16 @@ function Invoke-EditSettingsJsonMenu {
 }
 
 function Show-MainMenu {
-    Write-Host "Maintenance:" -ForegroundColor DarkYellow
-    Write-Host "  1. Turn On/Off and define source paths for systems." -ForegroundColor White
-    Write-Host "  2. Edit network mapping settings." -ForegroundColor White
-    Write-Host "  3. Destination file/folder cleanup." -ForegroundColor White
-    Write-Host "  4. Recreate config files from templates." -ForegroundColor White
+    Write-Host "Maintenance:" -ForegroundColor Cyan
+    Write-Host "  1. Toggle visibility and/or edit system source paths." -ForegroundColor White
+    Write-Host "  2. Edit network share mapping." -ForegroundColor White
+    Write-Host "  3. Destination file & folder cleanup." -ForegroundColor White
+    Write-Host "  4. Recreate config files from template files." -ForegroundColor White
     Write-Host "  5. Install latest files from GitHub." -ForegroundColor White
     Write-Host "  6. Reset network SMB connections." -ForegroundColor White
     Write-Host ""
 
-    Write-Host "Actions:" -ForegroundColor DarkYellow
+    Write-Host "Actions:" -ForegroundColor Cyan
     Write-Host "  7. Archive extraction and file copying, with region organization." -ForegroundColor White
     Write-Host "  8. Archive extraction and file copying, without region organization." -ForegroundColor White
     Write-Host "  9. Custom run (folders and paths as you specify)." -ForegroundColor White
@@ -1363,8 +1383,8 @@ function Show-MainMenu {
     Write-Host "  E. Exit." -ForegroundColor White
 
     Write-Host ""
-    Write-Host "Note:" -ForegroundColor DarkYellow
-    Write-Host "All options under Maintenance restart the script automatically when finished so new values are loaded." -ForegroundColor DarkGray
+    Write-Host "Note:" -ForegroundColor Cyan
+    Write-Host "All options under Maintenance restart the script automatically when finished so new values are loaded." -ForegroundColor DarkYellow
 }
 
 function Read-CustomRunConfiguration {
@@ -1492,13 +1512,13 @@ if ($null -ne $allConsoles) {
 
 $settingsLabelWidth = 26
 
-Write-Host "Settings:" -ForegroundColor DarkYellow
+Write-Host "Settings:" -ForegroundColor Cyan
 Write-Host ("  - {0,-$settingsLabelWidth}" -f 'Destination:') -NoNewline -ForegroundColor White
-Write-Host $DestinationRoot -ForegroundColor Yellow
+Write-Host $DestinationRoot -ForegroundColor Green
 Write-Host ("  - {0,-$settingsLabelWidth}" -f 'Temp Folder:') -NoNewline -ForegroundColor White
-Write-Host (Format-PathForDisplay $TempRoot) -ForegroundColor Yellow
+Write-Host (Format-PathForDisplay $TempRoot) -ForegroundColor Green
 Write-Host ("  - {0,-$settingsLabelWidth}" -f 'Active consoles:') -NoNewline -ForegroundColor White
-Write-Host $activeConsoleSourceCount.ToString() -ForegroundColor Yellow
+Write-Host $activeConsoleSourceCount.ToString() -ForegroundColor Green
 Write-Host ""
 
 $menuOptions = @($Org, $NoOrg, $Cleanup) | Where-Object { $_ }
@@ -1517,14 +1537,23 @@ if ($Org) {
     $doProcessing = $false
     $organizeRegions = $false
     $doCleanup = $true
+    $stdinRedirected = $false
+    try { $stdinRedirected = [Console]::IsInputRedirected } catch { $stdinRedirected = $false }
+    if (-not $stdinRedirected) {
+        $script:RestartAfterInteractiveCleanup = $true
+    }
 } else {
     $menuValid = $false
+    $mainMenuPrinted = $false
     while (-not $menuValid) {
-        Show-MainMenu
-        Write-Host ""
+        if (-not $mainMenuPrinted) {
+            Show-MainMenu
+            Write-Host ""
+            $mainMenuPrinted = $true
+        }
         Invoke-OutputFlush
-        Write-ScriptDiag "Read-Host menu (waiting for 1-9, E, or Enter to exit)"
-        $choice = (Read-Host "Enter option (1-9 or E to exit) [E]").Trim()
+        Write-ScriptDiag "Read-Host menu (waiting for 1-9, E, or [Enter] to exit)"
+        $choice = (Read-Host "Select options 1-9 or [Enter] to exit").Trim()
         if ([string]::IsNullOrWhiteSpace($choice) -or $choice -match '^(?i)(e|exit)$') { exit 0 }
         switch ($choice) {
             '1' {
@@ -1545,50 +1574,70 @@ if ($Org) {
             }
             '4' { $doRecreateConfig = $true; $menuValid = $true }
             '5' {
-                if (Invoke-GamePopulatorSelfUpdate -ScriptRoot $scriptRoot) {
-                    Write-Info "Restarting script..."
-                    & $script:EntryScriptPath @PSBoundParameters
-                    exit $LASTEXITCODE
-                }
+                $null = Invoke-GamePopulatorSelfUpdate -ScriptRoot $scriptRoot
+                Write-Info "Restarting script..."
+                & $script:EntryScriptPath @PSBoundParameters
+                exit $LASTEXITCODE
             }
             '6' {
                 Write-Host ""
-                Write-Host "Disconnects SMB mappings managed by this script, then reconnects the destination folder from settings.json." -ForegroundColor White
-                if (-not (Read-YesNoDefaultYes "Proceed?")) {
-                    continue
-                }
-                $destReconnect = Resolve-DestinationGamesSubfolder -Path (Resolve-DestinationPath -Path $settings.DestinationRoot)
-                $pathList = [System.Collections.Generic.List[string]]::new()
-                if ($settings.DestinationRoot) {
-                    $pathList.Add((Resolve-DestinationPath -Path $settings.DestinationRoot)) | Out-Null
-                }
-                $pathList.Add($destReconnect) | Out-Null
-                foreach ($c in @($allConsoles)) {
-                    if ($c -and $c.SourcePath) {
-                        $pathList.Add(($c.SourcePath.Trim())) | Out-Null
+                Write-Host "Disconnects SMB mappings managed by this script, then reconnects the destination folder from " -NoNewline -ForegroundColor White
+                Write-Host "settings.json" -NoNewline -ForegroundColor Green
+                Write-Host "." -ForegroundColor White
+                $option6NetworkRan = $false
+                if (Read-YesNoDefaultNo "Proceed?") {
+                    $option6NetworkRan = $true
+                    $destReconnect = Resolve-DestinationGamesSubfolder -Path (Resolve-DestinationPath -Path $settings.DestinationRoot)
+                    $pathList = [System.Collections.Generic.List[string]]::new()
+                    if ($settings.DestinationRoot) {
+                        $pathList.Add((Resolve-DestinationPath -Path $settings.DestinationRoot)) | Out-Null
                     }
-                }
-                try {
-                    Write-Host ""
-                    Disconnect-GamePopulatorNetworkMappings -UncPathCandidates @($pathList) -Quiet
-                    Write-Info "Disconnected script SMB connections."
-                    $reInfo = Initialize-DestinationRoot -Path $destReconnect -User $settings.ShareUser -Password $settings.SharePassword -Quiet
-                    if ($destReconnect.StartsWith('\\')) {
-                        $script:PostMenuDestinationInit = $reInfo
-                        Write-Info ("Destination share connected: {0}" -f $reInfo.Path)
-                    } else {
+                    $pathList.Add($destReconnect) | Out-Null
+                    foreach ($c in @($allConsoles)) {
+                        if ($c -and $c.SourcePath) {
+                            $pathList.Add(($c.SourcePath.Trim())) | Out-Null
+                        }
+                    }
+                    try {
+                        Write-Host ""
+                        Disconnect-GamePopulatorNetworkMappings -UncPathCandidates @($pathList) -Quiet
+                        Write-Info "Disconnected script SMB connections."
+                        $reInfo = Initialize-DestinationRoot -Path $destReconnect -User $settings.ShareUser -Password $settings.SharePassword -Quiet
+                        if ($destReconnect.StartsWith('\\')) {
+                            $script:PostMenuDestinationInit = $reInfo
+                            Write-Info ("Destination share connected: {0}" -f $reInfo.Path)
+                        } else {
+                            $script:PostMenuDestinationInit = $null
+                            Write-Info ("Destination folder ready (local path): {0}" -f $reInfo.Path)
+                        }
+                        Write-Host ""
+                    } catch {
                         $script:PostMenuDestinationInit = $null
-                        Write-Info ("Destination folder ready (local path): {0}" -f $reInfo.Path)
+                        $msg = $_.Exception.Message
+                        $hint = Expand-SmbConnectErrorHint -RawMessage $msg -UncPath $destReconnect
+                        Write-Warn ("Could not connect to destination share: {0}" -f $msg)
+                        if ($hint) { Write-Host $hint -ForegroundColor DarkYellow }
+                        Write-Host ""
+                    }
+                }
+                if ($option6NetworkRan) {
+                    Write-Host ""
+                    Write-Host "Press " -NoNewline -ForegroundColor White
+                    Write-Host "[Enter]" -NoNewline -ForegroundColor Green
+                    Write-Host " when ready to continue." -ForegroundColor White
+                    Invoke-OutputFlush
+                    try {
+                        do {
+                            $k = [Console]::ReadKey($true)
+                        } while ($k.Key -ne [ConsoleKey]::Enter)
+                    } catch {
+                        $null = Read-Host "Press Enter to restart the script."
                     }
                     Write-Host ""
-                } catch {
-                    $script:PostMenuDestinationInit = $null
-                    $msg = $_.Exception.Message
-                    $hint = Expand-SmbConnectErrorHint -RawMessage $msg -UncPath $destReconnect
-                    Write-Warn ("Could not connect to destination share: {0}" -f $msg)
-                    if ($hint) { Write-Host $hint -ForegroundColor DarkYellow }
-                    Write-Host ""
                 }
+                Write-Info "Restarting script to reload configuration..."
+                & $script:EntryScriptPath @PSBoundParameters
+                exit $LASTEXITCODE
             }
             '7' { $organizeRegions = $true; $doCleanup = $true; $menuValid = $true }
             '8' { $organizeRegions = $false; $doCleanup = $true; $menuValid = $true }
@@ -1637,7 +1686,7 @@ if ($script:CustomRunActive) {
 
 if ($doRecreateConfig) {
     $missingTemplates = @()
-    if (Read-YesNoDefaultYes "`nRecreate settings file (settings.json) from template?") {
+    if (Read-YesNoDefaultNo "`nRecreate settings file (settings.json) from template?") {
         if (Test-Path -LiteralPath $settingsTemplatePath) {
             Copy-Item -LiteralPath $settingsTemplatePath -Destination $settingsPath -Force
             Write-Info "Recreated: settings.json"
@@ -1645,7 +1694,7 @@ if ($doRecreateConfig) {
             $missingTemplates += 'settings.template.json'
         }
     }
-    if (Read-YesNoDefaultYes "Recreate console sources file (sources.psd1) from template?") {
+    if (Read-YesNoDefaultNo "Recreate console sources file (sources.psd1) from template?") {
         if (Test-Path -LiteralPath $consoleTemplatePath) {
             Copy-Item -LiteralPath $consoleTemplatePath -Destination $consolePath -Force
             Write-Info "Recreated: sources.psd1"
@@ -1653,7 +1702,7 @@ if ($doRecreateConfig) {
             $missingTemplates += 'sources.template.psd1'
         }
     }
-    if (Read-YesNoDefaultYes "Recreate console names file (console-names.json) from template?") {
+    if (Read-YesNoDefaultNo "Recreate console names file (console-names.json) from template?") {
         if (Test-Path -LiteralPath $consoleNamesTemplatePath) {
             Copy-Item -LiteralPath $consoleNamesTemplatePath -Destination $consoleNamesPath -Force
             Write-Info "Recreated: console-names.json"
@@ -1686,8 +1735,9 @@ if ($doRecreateConfig) {
         exit $LASTEXITCODE
     }
     Write-Host ""
-    Write-Info "Config files recreated from templates. Run the script again to continue."
-    exit 0
+    Write-Info "Restarting script to reload configuration..."
+    & $script:EntryScriptPath @PSBoundParameters
+    exit $LASTEXITCODE
 }
 
 $cleanupOnly = (-not $doProcessing -and $doCleanup)
@@ -1706,6 +1756,13 @@ if ($script:CustomRunActive) {
 }
 Write-ScriptDiag "Before Initialize-DestinationRoot (UNC share mapping can hang if the server is unreachable)"
 Invoke-OutputFlush
+$uncCountdownJob = $null
+if ($null -eq $script:PostMenuDestinationInit) {
+    $resolvedCountdownPath = Resolve-DestinationPath -Path $DestinationRoot
+    if ($cleanupOnly -and $script:RestartAfterInteractiveCleanup -and $resolvedCountdownPath.StartsWith('\\')) {
+        $uncCountdownJob = Start-DestinationUncConnectionCountdownDisplay -AdvisoryLimitSeconds 30
+    }
+}
 try {
     if ($null -ne $script:PostMenuDestinationInit) {
         Write-ScriptDiag "Using destination PSDrive from menu option 6 (network reset)"
@@ -1727,6 +1784,10 @@ try {
         Write-Host $hint -ForegroundColor DarkYellow
     }
     exit 1
+} finally {
+    if ($uncCountdownJob) {
+        Stop-GamePopulatorBackgroundStatusDisplay -Job $uncCountdownJob
+    }
 }
 
 if ($script:CustomRunActive -and $script:CustomRunDestDisplay) {
@@ -1739,10 +1800,24 @@ $ConsoleSourcesReachable = @($allConsoles)
 if (-not $cleanupOnly) {
     if (-not $script:CustomRunActive) {
         if (-not $ConsoleSources -or $ConsoleSources.Count -eq 0) {
-            Write-Host "No consoles were configured. Uncomment a console entry in " -NoNewline -ForegroundColor Yellow
-            Write-Host "sources.psd1" -NoNewline -ForegroundColor White
-            Write-Host "." -ForegroundColor Yellow
-            exit 0
+            Write-Host ""
+            Write-Host "No consoles were configured. Run option 1 to setup consoles." -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "Press " -NoNewline -ForegroundColor White
+            Write-Host "[Enter]" -NoNewline -ForegroundColor Green
+            Write-Host " to restart the script." -ForegroundColor White
+            Invoke-OutputFlush
+            try {
+                do {
+                    $k = [Console]::ReadKey($true)
+                } while ($k.Key -ne [ConsoleKey]::Enter)
+            } catch {
+                $null = Read-Host "Press Enter to restart the script"
+            }
+            Write-Host ""
+            Write-Info "Restarting script..."
+            & $script:EntryScriptPath @PSBoundParameters
+            exit $LASTEXITCODE
         }
     }
     $srcUser = $settings.ShareUser
@@ -1789,13 +1864,40 @@ if (-not $cleanupOnly) {
         }
         if ($unreachableList.Count -gt 0) {
             Write-Host ""
-            Write-Host "Sources unreachable: " -NoNewline -ForegroundColor DarkYellow
-            Write-Host $unreachableList.Count -ForegroundColor White
+            Write-Host "These enabled console share paths could not be reached; they will be skipped:" -ForegroundColor Red
             foreach ($entry in $unreachableList) {
-                Write-Host ("  - {0}" -f $entry.Name) -ForegroundColor Red
+                $pathDisp = Format-PathForDisplay ([string]$entry.SourcePath)
+                $errPart = if ($entry.Error) { (' — ' + [string]$entry.Error) } else { '' }
+                Write-Host ('  - ' + [string]$entry.Name + ': ' + $pathDisp + $errPart) -ForegroundColor Red
             }
         }
         Write-Host ""
+    }
+}
+
+if ($doProcessing -and -not $script:CustomRunActive) {
+    $sourcesWithSharePath = @($ConsoleSources | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_.Name) -and -not [string]::IsNullOrWhiteSpace($_.SourcePath)
+    })
+    if ($sourcesWithSharePath.Count -gt 0 -and $ConsoleSourcesReachable.Count -eq 0) {
+        Write-Host ""
+        Write-Host "No source shares are reachable; nothing to migrate. Check network paths and credentials." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Press " -NoNewline -ForegroundColor White
+        Write-Host "[Enter]" -NoNewline -ForegroundColor Green
+        Write-Host " to restart the script." -ForegroundColor White
+        Invoke-OutputFlush
+        try {
+            do {
+                $k = [Console]::ReadKey($true)
+            } while ($k.Key -ne [ConsoleKey]::Enter)
+        } catch {
+            $null = Read-Host "Press Enter to restart the script"
+        }
+        Write-Host ""
+        Write-Info "Restarting script..."
+        & $script:EntryScriptPath @PSBoundParameters
+        exit $LASTEXITCODE
     }
 }
 
@@ -1812,7 +1914,7 @@ if ($doProcessing) {
     $organizeTotalElapsed = [TimeSpan]::Zero
     $organizeTargets = @()
     if (-not $script:CustomRunActive) {
-        foreach ($src in $ConsoleSources) {
+        foreach ($src in $ConsoleSourcesReachable) {
             if (-not $src.Name) { continue }
             $consoleKey = $src.Name.ToLowerInvariant()
             if (-not $consoleNameMap.ContainsKey($consoleKey)) { continue }
@@ -1900,7 +2002,7 @@ if ($doProcessing) {
             if (-not ($script:CustomRunActive -and $consoleKey -eq 'custom run')) {
                 Write-Host "Console: $displayName" -ForegroundColor DarkCyan
             }
-            Write-Host "Scanning files on source library (recursive scan of every file; large libraries can take 1-5+ minutes)..." -ForegroundColor DarkGray
+            Write-Host "Scanning files on source library (recursive scan of every file; large libraries can take awhile)..." -ForegroundColor DarkGray
             Invoke-OutputFlush
             Write-ScriptDiag "Get-ChildItem -Recurse -File on source (enumerates entire tree)"
 
@@ -2212,42 +2314,81 @@ if ($doProcessing) {
 
 $destCleanup = $destDrive
 $overallStopwatch.Stop()
+$cleanupFilesRemoved = 0
+$cleanupFoldersRemoved = 0
 # Destination check: remove any files not in the console's allowed extensions list (.rom and .zip always allowed).
 if ($doCleanup) {
-    if ($script:CustomRunActive -and $consoleExtensionsMap.ContainsKey('custom run') -and $consoleExtensionsMap['custom run']) {
-        $customAllowed = @($consoleExtensionsMap['custom run'])
-        Remove-DestinationFilesNotMatchingExtensions -FolderPath $DestinationRoot -AllowedExtensions $customAllowed
-    } elseif (-not $script:CustomRunActive) {
-        foreach ($entry in $consoleNames) {
-            if (-not $entry.ShortName) { continue }
-            $consoleDestPath = Join-Path $DestinationRoot $entry.ShortName
-            if ($entry.PSObject.Properties['SubDir'] -and $entry.SubDir) {
-                $consoleDestPath = Join-Path $consoleDestPath $entry.SubDir
+    $cleanupStatusJob = $null
+    if ($script:RestartAfterInteractiveCleanup) {
+        $cleanupStatusJob = Start-CleanupActivityElapsedDisplay
+    }
+    try {
+        if ($script:CustomRunActive -and $consoleExtensionsMap.ContainsKey('custom run') -and $consoleExtensionsMap['custom run']) {
+            $customAllowed = @($consoleExtensionsMap['custom run'])
+            $fr = Remove-DestinationFilesNotMatchingExtensions -FolderPath $DestinationRoot -AllowedExtensions $customAllowed
+            $cleanupFilesRemoved += $fr.FilesRemoved
+        } elseif (-not $script:CustomRunActive) {
+            foreach ($entry in $consoleNames) {
+                if (-not $entry.ShortName) { continue }
+                $consoleDestPath = Join-Path $DestinationRoot $entry.ShortName
+                if ($entry.PSObject.Properties['SubDir'] -and $entry.SubDir) {
+                    $consoleDestPath = Join-Path $consoleDestPath $entry.SubDir
+                }
+                if (-not (Test-Path -LiteralPath $consoleDestPath -PathType Container)) { continue }
+                $extList = @()
+                if ($entry.PSObject.Properties['Extensions'] -and $null -ne $entry.Extensions) {
+                    $extList = @($entry.Extensions)
+                }
+                if ($extList.Count -eq 0) {
+                    Write-Warn "Console '$($entry.ShortName)' has no Extensions in console-names.json; skipping cleanup for that folder (no files removed)."
+                    continue
+                }
+                $fr = Remove-DestinationFilesNotMatchingExtensions -FolderPath $consoleDestPath -AllowedExtensions $extList
+                $cleanupFilesRemoved += $fr.FilesRemoved
             }
-            if (-not (Test-Path -LiteralPath $consoleDestPath -PathType Container)) { continue }
-            $extList = @()
-            if ($entry.PSObject.Properties['Extensions'] -and $null -ne $entry.Extensions) {
-                $extList = @($entry.Extensions)
-            }
-            if ($extList.Count -eq 0) {
-                Write-Warn "Console '$($entry.ShortName)' has no Extensions in console-names.json; skipping cleanup for that folder (no files removed)."
-                continue
-            }
-            Remove-DestinationFilesNotMatchingExtensions -FolderPath $consoleDestPath -AllowedExtensions $extList
+        }
+        $er = Remove-EmptyFolders -RootPath $DestinationRoot
+        $cleanupFoldersRemoved = $er.FoldersRemoved
+    } finally {
+        if ($cleanupStatusJob) {
+            Stop-GamePopulatorBackgroundStatusDisplay -Job $cleanupStatusJob
         }
     }
-    Remove-EmptyFolders -RootPath $DestinationRoot
 }
-Write-Summary "`n`n===[ Completion Summary ]==="
+$logsDir = Join-Path $scriptRoot 'logs'
+if (-not (Test-Path -LiteralPath $logsDir -PathType Container)) {
+    New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
+}
+$runSummaryLogLines = [System.Collections.Generic.List[string]]::new()
+$runSummaryLogLines.Add("Game Populator run summary — $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+$runSummaryLogLines.Add('')
+
+$runSummaryLogLines.Add('===[ Completion Summary ]===')
+Write-Summary "===[ Completion Summary ]==="
+$runSummaryLogLines.Add(("     Destination path:    {0}" -f $destinationPathDisplay))
 Write-Host "     Destination path:    " -NoNewline -ForegroundColor DarkCyan
 Write-Host $destinationPathDisplay -ForegroundColor White
+$elapsedTotal = Format-Elapsed $overallStopwatch.Elapsed
+$runSummaryLogLines.Add(("     Total time:          {0}" -f $elapsedTotal))
 Write-Host "     Total time:          " -NoNewline -ForegroundColor DarkCyan
-Write-Host (Format-Elapsed $overallStopwatch.Elapsed) -ForegroundColor White
+Write-Host $elapsedTotal -ForegroundColor White
+if ($doCleanup) {
+    $runSummaryLogLines.Add(("     Files removed:       {0}" -f $cleanupFilesRemoved.ToString('N0')))
+    $runSummaryLogLines.Add(("     Empty folders:       {0}" -f $cleanupFoldersRemoved.ToString('N0')))
+    Write-Host "     Files removed:       " -NoNewline -ForegroundColor DarkCyan
+    Write-Host ($cleanupFilesRemoved.ToString('N0')) -ForegroundColor White
+    Write-Host "     Empty folders:       " -NoNewline -ForegroundColor DarkCyan
+    Write-Host ($cleanupFoldersRemoved.ToString('N0')) -ForegroundColor White
+}
 if (-not $cleanupOnly) {
     if ($script:didOrganizeExisting) {
+        $orgEl = Format-Elapsed $script:organizeElapsed
+        $runSummaryLogLines.Add(("     Organize time:       {0}" -f $orgEl))
         Write-Host "     Organize time:       " -NoNewline -ForegroundColor DarkCyan
-        Write-Host (Format-Elapsed $script:organizeElapsed) -ForegroundColor White
+        Write-Host $orgEl -ForegroundColor White
     }
+    $runSummaryLogLines.Add(("     Files copied:        {0}" -f $script:totalFiles.ToString('N0')))
+    $runSummaryLogLines.Add(("     Total size copied:   {0}" -f (Format-Size $script:totalBytes)))
     Write-Host "     Files copied:        " -NoNewline -ForegroundColor DarkCyan
     Write-Host ($script:totalFiles.ToString('N0')) -ForegroundColor White
     Write-Host "     Total size copied:   " -NoNewline -ForegroundColor DarkCyan
@@ -2255,29 +2396,36 @@ if (-not $cleanupOnly) {
     if ($script:errors.Count -gt 0) {
         $timestamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
         $logFileName = "errorlog-$timestamp.log"
-        $logPath = Join-Path (Get-Location) $logFileName
+        $logPath = Join-Path $logsDir $logFileName
         $logStamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
         $header = "[$logStamp] $($script:errors.Count) error(s) occurred."
         $content = @($header) + $script:errors
         try {
             $content | Set-Content -Path $logPath -Encoding UTF8
-            Write-Host "     Errors:              " -NoNewline -ForegroundColor Red
-            Write-Host ($script:errors.Count.ToString('N0')) -NoNewline -ForegroundColor Red
-            Write-Host (" (see {0})" -f $logFileName) -ForegroundColor Red
+            $runSummaryLogLines.Add(("     Errors:              {0} (log: {1})" -f $script:errors.Count.ToString('N0'), $logFileName))
+            Write-Host "     An error log was written with " -NoNewline -ForegroundColor DarkYellow
+            Write-Host ($script:errors.Count.ToString('N0')) -NoNewline -ForegroundColor DarkYellow
+            Write-Host " error(s): " -NoNewline -ForegroundColor DarkYellow
+            Write-Host $logFileName -ForegroundColor Red
         } catch {
             Write-Host "Failed to write error log: " -NoNewline -ForegroundColor Yellow
             Write-Host ([System.IO.Path]::GetFileName($logPath)) -ForegroundColor White
+            $runSummaryLogLines.Add(("     Errors:              {0} (log write failed)" -f $script:errors.Count.ToString('N0')))
             Write-Host "     Errors:              " -NoNewline -ForegroundColor Red
             Write-Host ($script:errors.Count.ToString('N0')) -NoNewline -ForegroundColor Red
             Write-Host " (log write failed)" -ForegroundColor Red
         }
     }
 }
+$runSummaryLogLines.Add('')
 Write-Host ""
 
 if ($script:consoleSummaries.Count -gt 0) {
+    $runSummaryLogLines.Add('===[ Console Summary ]===')
     Write-Host "===[ Console Summary ]===" -ForegroundColor DarkCyan
     foreach ($summary in $script:consoleSummaries) {
+        $csLine = "{0} completed in {1} copying {2} files using {3}." -f $summary.Name, (Format-Elapsed $summary.Elapsed), $summary.Files.ToString('N0'), (Format-Size $summary.Bytes)
+        $runSummaryLogLines.Add($csLine)
         Write-Host ("{0} " -f $summary.Name) -NoNewline -ForegroundColor White
         Write-Host ("completed in {0} copying " -f (Format-Elapsed $summary.Elapsed)) -NoNewline -ForegroundColor White
         Write-Host ($summary.Files.ToString('N0')) -NoNewline -ForegroundColor DarkCyan
@@ -2285,6 +2433,7 @@ if ($script:consoleSummaries.Count -gt 0) {
         Write-Host (Format-Size $summary.Bytes) -NoNewline -ForegroundColor DarkCyan
         Write-Host "." -ForegroundColor White
     }
+    $runSummaryLogLines.Add('')
     Write-Host ""
 }
 
@@ -2304,29 +2453,57 @@ if ($organizeRegions) {
         $regionCounts = Get-RegionCountsFromDestination -FolderPath $consoleDestPath
         if (-not $regionCounts -or $regionCounts.Count -eq 0) { continue }
         if (-not $regionSummaryShown) {
+            $runSummaryLogLines.Add('===[ Region Summary ]===')
             Write-Host "===[ Region Summary ]===" -ForegroundColor DarkCyan
             $regionSummaryShown = $true
         }
         $displayName = if ($entry.Name) { $entry.Name } else { $entry.ShortName }
+        $runSummaryLogLines.Add([string]$displayName)
         Write-Host $displayName -ForegroundColor White
         foreach ($key in (Get-OrderedRegionKeys -Keys $regionCounts.Keys)) {
             $regionLabel = ($key -replace '^\d+\s*-\s*', '')
             $countText = $regionCounts[$key].ToString('N0', $regionUsCulture)
-            Write-Host ($regionLineIndent + $regionLabel.PadRight($regionLabelColumn) + ' - ' + $countText) -ForegroundColor White
+            $rLine = $regionLineIndent + $regionLabel.PadRight($regionLabelColumn) + ' - ' + $countText
+            $runSummaryLogLines.Add($rLine)
+            Write-Host $rLine -ForegroundColor White
             if (-not $regionTotalsFromDest.ContainsKey($key)) { $regionTotalsFromDest[$key] = 0 }
             $regionTotalsFromDest[$key] += $regionCounts[$key]
         }
+        $runSummaryLogLines.Add('')
         Write-Host ""
     }
 
     if ($regionTotalsFromDest.Count -gt 0) {
+        $runSummaryLogLines.Add('===[ Region Totals ]===')
         Write-Host "===[ Region Totals ]===" -ForegroundColor DarkCyan
         foreach ($key in (Get-OrderedRegionKeys -Keys $regionTotalsFromDest.Keys)) {
             $regionLabel = ($key -replace '^\d+\s*-\s*', '')
             $countText = $regionTotalsFromDest[$key].ToString('N0', $regionUsCulture)
-            Write-Host ($regionLineIndent + $regionLabel.PadRight($regionLabelColumn) + ' - ' + $countText) -ForegroundColor White
+            $totLine = $regionLineIndent + $regionLabel.PadRight($regionLabelColumn) + ' - ' + $countText
+            $runSummaryLogLines.Add($totLine)
+            Write-Host $totLine -ForegroundColor White
         }
+        $regionGrandTotal = [long]0
+        foreach ($gk in $regionTotalsFromDest.Keys) {
+            $regionGrandTotal += [long]$regionTotalsFromDest[$gk]
+        }
+        $grandLine = $regionLineIndent + 'Grand Total'.PadRight($regionLabelColumn) + ' - ' + $regionGrandTotal.ToString('N0', $regionUsCulture)
+        $runSummaryLogLines.Add('')
+        $runSummaryLogLines.Add($grandLine)
+        Write-Host ""
+        Write-Host $grandLine -ForegroundColor White
     }
+}
+
+$gamerunFileName = ('gamerun-{0}.log' -f (Get-Date).ToString('yyyyMMdd-HHmmss'))
+$gamerunPath = Join-Path $logsDir $gamerunFileName
+try {
+    $runSummaryLogLines | Set-Content -LiteralPath $gamerunPath -Encoding UTF8
+    Write-Host ""
+    Write-Host "Run summary log: " -NoNewline -ForegroundColor DarkCyan
+    Write-Host $gamerunFileName -ForegroundColor White
+} catch {
+    Write-Warn ("Could not write run summary log: {0}" -f $_.Exception.Message)
 }
 Write-Host ""
 
@@ -2336,8 +2513,18 @@ if ($destCleanup) {
 
 if ($script:RestartAfterInteractiveCleanup) {
     Write-Host ""
+    Write-Host "Completed. Press " -NoNewline -ForegroundColor White
+    Write-Host "[Enter]" -NoNewline -ForegroundColor Green
+    Write-Host " to return to the main menu." -ForegroundColor White
     Invoke-OutputFlush
-    $null = Read-Host "Press [Enter]"
+    try {
+        do {
+            $k = [Console]::ReadKey($true)
+        } while ($k.Key -ne [ConsoleKey]::Enter)
+    } catch {
+        $null = Read-Host "Press Enter to return to the main menu"
+    }
+    Write-Host ""
     Write-Info "Restarting script..."
     & $script:EntryScriptPath @PSBoundParameters
     exit $LASTEXITCODE
