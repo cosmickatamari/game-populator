@@ -1,0 +1,84 @@
+[
+  {
+    "ShortName": "MegaDrive",
+    "Name": "Sega Genesis - Mega Drive - Enhanced Colors",
+    "SubDir": "05 - Enhanced Colors",
+    "Extensions": [
+      ".bin",
+      ".gen",
+      ".md",
+      ".sms"
+    ]
+  },
+  {
+    "ShortName": "MegaDrive",
+    "Name": "Sega Genesis - Mega Drive - MD\u002B",
+    "SubDir": "06 - MD\u002B",
+    "Extensions": [
+      ".bin",
+      ".gen",
+      ".md",
+      ".sms"
+    ]
+  },
+  {
+    "ShortName": "MegaDrive",
+    "Name": "Sega Genesis - Mega Drive - Mode 1 CD",
+    "SubDir": "07 - Mode 1 CD",
+    "Extensions": [
+      ".bin",
+      ".gen",
+      ".md",
+      ".sms"
+    ]
+  },
+  {
+    "ShortName": "MegaDrive",
+    "Name": "Sega Genesis - Mega Drive - MSU-MD",
+    "SubDir": "02 - MSU-MD",
+    "Extensions": [
+      ".bin",
+      ".gen",
+      ".md",
+      ".sms"
+    ]
+  },
+  {
+    "ShortName": "S32x",
+    "Name": "Sega 32X - MSU-MD",
+    "SubDir": "01 - MSU-MD",
+    "Extensions": [
+      ".32x"
+    ]
+  },
+  {
+    "ShortName": "SNES",
+    "Name": "Super Nintendo Entertainment System - Enhanced Colors",
+    "SubDir": "05 - Enhanced Colors",
+    "Extensions": [
+      ".bin",
+      ".smc",
+      ".sfc"
+    ]
+  },
+  {
+    "ShortName": "SNES",
+    "Name": "Super Nintendo Entertainment System - MSU-1",
+    "SubDir": "03 - MSU-1",
+    "Extensions": [
+      ".bin",
+      ".smc",
+      ".sfc"
+    ]
+  },
+  {
+    "ShortName": "SNES",
+    "Name": "Super Nintendo Entertainment System - Speed Hacks",
+    "SubDir": "04 - Speed Hacks",
+    "Extensions": [
+      ".bin",
+      ".smc",
+      ".sfc"
+    ]
+  }
+]

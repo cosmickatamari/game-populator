@@ -1,5 +1,8 @@
 @{
   Sources = @(
+#    Standard consoles only. Each Name must match console-names.json.
+#    Other categories — hacks-sources.psd1 + hacks-names.json; trans-sources.psd1 + trans-names.json;
+#    addons-sources.psd1 + addons-names.json.
 #    @{
 #        Name = 'Acetronic MPU 1000'
 #        SourcePath = '\\server\share\VC4000'
@@ -117,10 +120,6 @@
 #        SourcePath = '\\server\share\NES'
 #    }
 #    @{
-#        Name = 'Nintendo Entertainment System Music Player'
-#        SourcePath = '\\server\share\NES'
-#    }
-#    @{
 #        Name = 'Nintendo Family Computer Disk System'
 #        SourcePath = '\\server\share\NES'
 #    }
@@ -145,8 +144,12 @@
 #        SourcePath = '\\server\share\PokemonMini'
 #    }
 #    @{
-#        Name = 'Nintendo Super Game Boy'
-#        SourcePath = '\\server\share\SGB'
+#        Name = 'Nintendo Super Game Boy (GB original)'
+#        SourcePath = '\\server\share\SGB-GB'
+#    }
+#    @{
+#        Name = 'Nintendo Super Game Boy (GBC original)'
+#        SourcePath = '\\server\share\SGB-GBC'
 #    }
 #    @{
 #        Name = 'Occitane OC2000'
@@ -209,11 +212,7 @@
 #        SourcePath = '\\server\share\SNES'
 #    }
 #    @{
-#        Name = 'Super Nintendo Entertainment System BS-X Satellaview'
-#        SourcePath = '\\server\share\SNES'
-#    }
-#    @{
-#        Name = 'Super Nintendo Entertainment System Music Player'
+#        Name = 'Super Nintendo Entertainment System - BS-X Satellaview'
 #        SourcePath = '\\server\share\SNES'
 #    }
 #    @{

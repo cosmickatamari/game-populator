@@ -1,0 +1,20 @@
+[
+  {
+    "ShortName": "NES-NSF",
+    "Name": "Music Player - Nintendo Entertainment System",
+    "SubDir": "10 - NSF",
+    "Music": "yes",
+    "Extensions": [
+      ".nsf"
+    ]
+  },
+  {
+    "ShortName": "SNES-SPC",
+    "Name": "Music Player - Super Nintendo Entertainment System",
+    "SubDir": "10 - SPC",
+    "Music": "yes",
+    "Extensions": [
+      ".spc"
+    ]
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "DestinationRoot": "",
+  "TempRoot": "",
+  "SevenZipExe": "C:\\Program Files\\7-Zip\\7z.exe",
+  "ArchiveExtensions": [
+    ".zip",
+    ".7z",
+    ".rar"
+  ],
+  "MaxFilesPerFolder": 256,
+  "MaxConcurrentFileCopies": 4,
+  "StructuredRunLog": true,
+  "UseRunCheckpoint": true,
+  "ShareUser": "mister",
+  "SharePassword": "dontplay"
+}

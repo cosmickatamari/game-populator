@@ -8,30 +8,71 @@ Updated: 05/04/2026
 
 param(
     [switch]$Help,
-    [switch]$Org,
-    [switch]$NoOrg,
-    [switch]$Cleanup,
-    [switch]$Diag,
-    [string]$DestinationRoot,
-    [string]$TempRoot
+    [switch]$Diag
 )
 
+$script:GamePopulatorCliDiag = [bool]$Diag
 $scriptRoot = $PSScriptRoot
+$librariesRoot = Join-Path $scriptRoot 'libraries'
+$script:GamePopulatorLibrariesRoot = $librariesRoot
+
+$libraryConfigLeaves = @(
+    'helpers.ps1',
+    'game-populator-functions.ps1',
+    'settings.json',
+    'settings.template.json',
+    'console-sources.psd1',
+    'console-sources.template.psd1',
+    'hacks-sources.psd1',
+    'hacks-sources.template.psd1',
+    'trans-sources.psd1',
+    'trans-sources.template.psd1',
+    'addons-sources.psd1',
+    'addons-sources.template.psd1',
+    'console-names.json',
+    'console-names.template.json',
+    'hacks-names.json',
+    'hacks-names.template.json',
+    'trans-names.json',
+    'trans-names.template.json',
+    'addons-names.json',
+    'addons-names.template.json',
+    'sources.psd1',
+    'sources.template.psd1'
+)
+try {
+    if (-not (Test-Path -LiteralPath $librariesRoot -PathType Container)) {
+        New-Item -Path $librariesRoot -ItemType Directory -Force | Out-Null
+    }
+    foreach ($leaf in $libraryConfigLeaves) {
+        $src = Join-Path $scriptRoot $leaf
+        $dst = Join-Path $librariesRoot $leaf
+        if ((Test-Path -LiteralPath $src -PathType Leaf) -and -not (Test-Path -LiteralPath $dst)) {
+            Move-Item -LiteralPath $src -Destination $dst -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+catch {
+}
 
 $gameEntry = Join-Path $scriptRoot 'game-populator.ps1'
 $script:EntryScriptPath = if (Test-Path -LiteralPath $gameEntry -PathType Leaf) {
     $gameEntry
-} else {
+}
+else {
     $PSCommandPath
 }
 
-$script:GamePopulatorBoundParameters = $PSBoundParameters
 Set-StrictMode -Version Latest
 $script:ScriptDiag = $false
-$helpersPath = Join-Path $scriptRoot 'helpers.ps1'
+$script:GamePopulatorLeavesUnderLibraries = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+foreach ($leaf in @($libraryConfigLeaves)) {
+    [void]$script:GamePopulatorLeavesUnderLibraries.Add($leaf)
+}
+$helpersPath = Join-Path $librariesRoot 'helpers.ps1'
 if (-not (Test-Path -LiteralPath $helpersPath -PathType Leaf)) {
-    Write-Host "Required file not found beside this script: " -NoNewline -ForegroundColor Red
-    Write-Host "helpers.ps1" -ForegroundColor White
+    Write-Host "Required file not found: " -NoNewline -ForegroundColor Red
+    Write-Host ('libraries\{0}' -f 'helpers.ps1') -ForegroundColor White
     exit 1
 }
 . $helpersPath
@@ -44,13 +85,44 @@ function Write-ScriptDiag {
     try { [Console]::Out.Flush() } catch { }
 }
 
+function Set-GamePopulatorConsoleWindowSize {
+    param(
+        [int]$TargetWidth = 175
+    )
+    try {
+        $raw = $Host.UI.RawUI
+        if ($null -eq $raw) { return }
+
+        $maxWidth = $raw.MaxPhysicalWindowSize.Width
+        $maxHeight = $raw.MaxPhysicalWindowSize.Height
+        if ($maxWidth -lt 1 -or $maxHeight -lt 1) { return }
+
+        $width = [Math]::Min($TargetWidth, $maxWidth)
+        if ($width -lt 1) { return }
+
+        $buffer = $raw.BufferSize
+        if ($buffer.Width -lt $width -or $buffer.Height -lt $maxHeight) {
+            $raw.BufferSize = New-Object System.Management.Automation.Host.Size(
+                [Math]::Max($buffer.Width, $width),
+                [Math]::Max($buffer.Height, $maxHeight)
+            )
+        }
+
+        $raw.WindowSize = New-Object System.Management.Automation.Host.Size($width, $maxHeight)
+    }
+    catch {
+    }
+}
+
 if ($PSVersionTable.PSVersion.Major -ne 7) {
     Write-Fail "PowerShell 7.x is required."
 }
 
+Set-GamePopulatorConsoleWindowSize -TargetWidth 175
 try {
     Clear-Host
-} catch {
+}
+catch {
     Write-Host ""
 }
 Write-Host "=== [ $script:ScriptName ]===" -ForegroundColor DarkGreen
@@ -63,87 +135,130 @@ if ($Help) {
     Show-Help
 }
 
-$settingsPath = Join-Path $scriptRoot 'settings.json'
-$consolePath = Join-Path $scriptRoot 'sources.psd1'
-$consoleNamesPath = Join-Path $scriptRoot 'console-names.json'
-$settingsTemplatePath = Join-Path $scriptRoot 'settings.template.json'
-$consoleTemplatePath = Join-Path $scriptRoot 'sources.template.psd1'
-$consoleNamesTemplatePath = Join-Path $scriptRoot 'console-names.template.json'
+$settingsPath = Join-Path $librariesRoot 'settings.json'
+$consolePath = Join-Path $librariesRoot 'console-sources.psd1'
+$hacksSourcesPath = Join-Path $librariesRoot 'hacks-sources.psd1'
+$transSourcesPath = Join-Path $librariesRoot 'trans-sources.psd1'
+$addonsSourcesPath = Join-Path $librariesRoot 'addons-sources.psd1'
+$consoleNamesPath = Join-Path $librariesRoot 'console-names.json'
+$hacksNamesPath = Join-Path $librariesRoot 'hacks-names.json'
+$transNamesPath = Join-Path $librariesRoot 'trans-names.json'
+$addonsNamesPath = Join-Path $librariesRoot 'addons-names.json'
+$settingsTemplatePath = Join-Path $librariesRoot 'settings.template.json'
+$consoleTemplatePath = Join-Path $librariesRoot 'console-sources.template.psd1'
+$hacksSourcesTemplatePath = Join-Path $librariesRoot 'hacks-sources.template.psd1'
+$transSourcesTemplatePath = Join-Path $librariesRoot 'trans-sources.template.psd1'
+$addonsSourcesTemplatePath = Join-Path $librariesRoot 'addons-sources.template.psd1'
+$consoleNamesTemplatePath = Join-Path $librariesRoot 'console-names.template.json'
+$hacksNamesTemplatePath = Join-Path $librariesRoot 'hacks-names.template.json'
+$transNamesTemplatePath = Join-Path $librariesRoot 'trans-names.template.json'
+$addonsNamesTemplatePath = Join-Path $librariesRoot 'addons-names.template.json'
+$legacySourcesPath = Join-Path $librariesRoot 'sources.psd1'
+$legacySourcesTemplatePath = Join-Path $librariesRoot 'sources.template.psd1'
 
-$configRecreatedFromTemplate = $false
+if (-not (Test-Path -LiteralPath $consolePath) -and (Test-Path -LiteralPath $legacySourcesPath)) {
+    Move-Item -LiteralPath $legacySourcesPath -Destination $consolePath -Force
+}
+if (-not (Test-Path -LiteralPath $consoleTemplatePath) -and (Test-Path -LiteralPath $legacySourcesTemplatePath)) {
+    Move-Item -LiteralPath $legacySourcesTemplatePath -Destination $consoleTemplatePath -Force
+}
+
+$script:GamePopulatorSourcesPaths = @($consolePath, $hacksSourcesPath, $transSourcesPath, $addonsSourcesPath)
+$script:GamePopulatorNamesPaths = @($consoleNamesPath, $hacksNamesPath, $transNamesPath, $addonsNamesPath)
 
 $templateBootstrapNames = @(
     'settings.template.json',
-    'sources.template.psd1',
-    'console-names.template.json'
+    'console-sources.template.psd1',
+    'hacks-sources.template.psd1',
+    'trans-sources.template.psd1',
+    'addons-sources.template.psd1',
+    'console-names.template.json',
+    'hacks-names.template.json',
+    'trans-names.template.json',
+    'addons-names.template.json'
 )
 $missingTemplatesBootstrap = @()
 foreach ($tn in $templateBootstrapNames) {
-    $tp = Join-Path $scriptRoot $tn
+    $tp = Join-Path $librariesRoot $tn
     if (-not (Test-Path -LiteralPath $tp -PathType Leaf)) {
         $missingTemplatesBootstrap += $tn
     }
 }
 if ($missingTemplatesBootstrap.Count -gt 0) {
     Write-Info "Rebuilding template files from GitHub source..."
-    if (-not (Restore-GamePopulatorTemplatesFromGitHub -ScriptRoot $scriptRoot -TemplateFileNames @($missingTemplatesBootstrap))) {
+    if (-not (Restore-GamePopulatorTemplatesFromGitHub -ScriptRoot $scriptRoot -LibrariesRoot $librariesRoot -TemplateFileNames @($missingTemplatesBootstrap))) {
         Write-Fail "Could not download missing template files from GitHub. Check your network connection."
     }
     Write-Info "Restarting script after restoring templates."
-    & $script:EntryScriptPath @PSBoundParameters
+    Invoke-GamePopulatorScriptRestart
     exit $LASTEXITCODE
 }
 
 if (-not (Test-Path -LiteralPath $settingsPath)) {
     Write-Host "Settings file not found: " -NoNewline -ForegroundColor Yellow
     Write-Host ([System.IO.Path]::GetFileName($settingsPath)) -ForegroundColor White
-    if (Read-YesNoDefaultYes "Recreate the settings file now?") {
+    if (Read-YesNoDefaultYes 'Recreate libraries\settings.json now?') {
         if (-not (Test-Path -LiteralPath $settingsTemplatePath)) {
             Write-Host "Settings template not found: " -NoNewline -ForegroundColor Yellow
             Write-Host ([System.IO.Path]::GetFileName($settingsTemplatePath)) -ForegroundColor White
             exit 1
         }
         Copy-Item -LiteralPath $settingsTemplatePath -Destination $settingsPath -Force
-        $configRecreatedFromTemplate = $true
-    } else {
+    }
+    else {
         Write-Fail "Settings file is required."
     }
 }
 if (-not (Test-Path -LiteralPath $consolePath)) {
-    Write-Host "Console sources file not found: " -NoNewline -ForegroundColor Yellow
+    Write-Host 'libraries\console-sources.psd1 not found: ' -NoNewline -ForegroundColor Yellow
     Write-Host ([System.IO.Path]::GetFileName($consolePath)) -ForegroundColor White
-    if (Read-YesNoDefaultYes "Recreate the console sources file now?") {
+    if (Read-YesNoDefaultYes 'Recreate libraries\console-sources.psd1 from template now?') {
         if (-not (Test-Path -LiteralPath $consoleTemplatePath)) {
-            Write-Host "Console template not found: " -NoNewline -ForegroundColor Yellow
+            Write-Host "Template not found: " -NoNewline -ForegroundColor Yellow
             Write-Host ([System.IO.Path]::GetFileName($consoleTemplatePath)) -ForegroundColor White
             exit 1
         }
         Copy-Item -LiteralPath $consoleTemplatePath -Destination $consolePath -Force
-        $configRecreatedFromTemplate = $true
-    } else {
-        Write-Fail "Console sources file is required."
+    }
+    else {
+        Write-Fail 'libraries\console-sources.psd1 is required.'
     }
 }
 if (-not (Test-Path -LiteralPath $consoleNamesPath)) {
     Write-Host "Console names file not found: " -NoNewline -ForegroundColor Yellow
     Write-Host ([System.IO.Path]::GetFileName($consoleNamesPath)) -ForegroundColor White
-    if (Read-YesNoDefaultYes "Recreate the console names file now?") {
+    if (Read-YesNoDefaultYes 'Recreate libraries\console-names.json now?') {
         if (-not (Test-Path -LiteralPath $consoleNamesTemplatePath)) {
             Write-Host "Console names template not found: " -NoNewline -ForegroundColor Yellow
             Write-Host ([System.IO.Path]::GetFileName($consoleNamesTemplatePath)) -ForegroundColor White
             exit 1
         }
         Copy-Item -LiteralPath $consoleNamesTemplatePath -Destination $consoleNamesPath -Force
-        $configRecreatedFromTemplate = $true
-    } else {
+    }
+    else {
         Write-Fail "Console names file is required."
+    }
+}
+
+$optionalConfigSeeds = @(
+    @{ Path = $hacksSourcesPath; Template = $hacksSourcesTemplatePath }
+    @{ Path = $transSourcesPath; Template = $transSourcesTemplatePath }
+    @{ Path = $addonsSourcesPath; Template = $addonsSourcesTemplatePath }
+    @{ Path = $hacksNamesPath; Template = $hacksNamesTemplatePath }
+    @{ Path = $transNamesPath; Template = $transNamesTemplatePath }
+    @{ Path = $addonsNamesPath; Template = $addonsNamesTemplatePath }
+)
+foreach ($seed in $optionalConfigSeeds) {
+    if (-not (Test-Path -LiteralPath $seed.Path) -and (Test-Path -LiteralPath $seed.Template)) {
+        Copy-Item -LiteralPath $seed.Template -Destination $seed.Path -Force
     }
 }
 
 $settings = $null
 try {
     $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
-} catch {
+}
+catch {
     Write-Host "Settings file is invalid: " -NoNewline -ForegroundColor Yellow
     Write-Host ([System.IO.Path]::GetFileName($settingsPath)) -ForegroundColor White
     Write-Warn "Details: $($_.Exception.Message)"
@@ -155,14 +270,15 @@ try {
             $repaired | Set-Content -Path $settingsPath -Encoding UTF8
             Write-Warn "Settings file contained unescaped backslashes and was auto-corrected."
             Write-Info "Restarting script to load corrected settings."
-            & $script:EntryScriptPath @PSBoundParameters
+            Invoke-GamePopulatorScriptRestart
             exit $LASTEXITCODE
-        } catch {
+        }
+        catch {
             $settings = $null
         }
     }
     if (-not $settings) {
-        if (Read-YesNoDefaultYes "Recreate the settings file now?") {
+        if (Read-YesNoDefaultYes 'Recreate libraries\settings.json now?') {
             if (-not (Test-Path -LiteralPath $settingsTemplatePath)) {
                 Write-Host "Settings template not found: " -NoNewline -ForegroundColor Yellow
                 Write-Host ([System.IO.Path]::GetFileName($settingsTemplatePath)) -ForegroundColor White
@@ -170,1300 +286,21 @@ try {
             }
             Copy-Item -LiteralPath $settingsTemplatePath -Destination $settingsPath -Force
             $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
-            $configRecreatedFromTemplate = $true
-        } else {
+        }
+        else {
             Write-Fail "Settings file is required."
         }
     }
 }
 
-function Get-PsdImportedSourcesArray {
-    param([object]$RootData)
-    if ($null -eq $RootData) {
-        return @()
-    }
-    if ($RootData -is [hashtable]) {
-        if (-not $RootData.ContainsKey('Sources')) {
-            return @()
-        }
-        $raw = $RootData['Sources']
-        if ($null -eq $raw) {
-            return @()
-        }
-        return @($raw)
-    }
-    foreach ($prop in @($RootData.PSObject.Properties)) {
-        if ($prop.Name -eq 'Sources') {
-            if ($null -eq $prop.Value) {
-                return @()
-            }
-            return @($prop.Value)
-        }
-    }
-    return @()
+$gamePopulatorFunctionsPath = Join-Path $librariesRoot 'game-populator-functions.ps1'
+if (-not (Test-Path -LiteralPath $gamePopulatorFunctionsPath -PathType Leaf)) {
+    Write-Host "Required file not found: " -NoNewline -ForegroundColor Red
+    Write-Host ('libraries\{0}' -f 'game-populator-functions.ps1') -ForegroundColor White
+    exit 1
 }
+. $gamePopulatorFunctionsPath
 
-$allConsoles = $null
-try {
-    $consoleData = Import-PowerShellDataFile -LiteralPath $consolePath -ErrorAction Stop
-    $allConsoles = @(Get-PsdImportedSourcesArray $consoleData)
-} catch {
-    Write-Host "Console sources file is invalid: " -NoNewline -ForegroundColor Yellow
-    Write-Host ([System.IO.Path]::GetFileName($consolePath)) -ForegroundColor White
-    Write-Warn "Details: $($_.Exception.Message)"
-    if (Read-YesNoDefaultYes "Recreate the console sources file now?") {
-        if (-not (Test-Path -LiteralPath $consoleTemplatePath)) {
-            Write-Host "Console template not found: " -NoNewline -ForegroundColor Yellow
-            Write-Host ([System.IO.Path]::GetFileName($consoleTemplatePath)) -ForegroundColor White
-            exit 1
-        }
-        Copy-Item -LiteralPath $consoleTemplatePath -Destination $consolePath -Force
-        $consoleData = Import-PowerShellDataFile -LiteralPath $consolePath -ErrorAction Stop
-        $allConsoles = @(Get-PsdImportedSourcesArray $consoleData)
-        $configRecreatedFromTemplate = $true
-    } else {
-        Write-Fail "Console sources file is required."
-    }
-}
-
-$consoleNames = $null
-try {
-    $consoleNames = Get-Content -LiteralPath $consoleNamesPath -Raw | ConvertFrom-Json
-} catch {
-    Write-Host "Console names file is invalid: " -NoNewline -ForegroundColor Yellow
-    Write-Host ([System.IO.Path]::GetFileName($consoleNamesPath)) -ForegroundColor White
-    Write-Warn "Details: $($_.Exception.Message)"
-    if (Read-YesNoDefaultYes "Recreate the console names file now?") {
-        if (-not (Test-Path -LiteralPath $consoleNamesTemplatePath)) {
-            Write-Host "Console names template not found: " -NoNewline -ForegroundColor Yellow
-            Write-Host ([System.IO.Path]::GetFileName($consoleNamesTemplatePath)) -ForegroundColor White
-            exit 1
-        }
-        Copy-Item -LiteralPath $consoleNamesTemplatePath -Destination $consoleNamesPath -Force
-        $consoleNames = Get-Content -LiteralPath $consoleNamesPath -Raw | ConvertFrom-Json
-        $configRecreatedFromTemplate = $true
-    } else {
-        Write-Fail "Console names file is required."
-    }
-}
-
-if (-not $settings.SevenZipExe -or -not $settings.ArchiveExtensions) {
-    Write-Warn "Settings file is missing required values."
-    if (Read-YesNoDefaultYes "Recreate the settings file now?") {
-        if (-not (Test-Path -LiteralPath $settingsTemplatePath)) {
-            Write-Host "Settings template not found: " -NoNewline -ForegroundColor Yellow
-            Write-Host ([System.IO.Path]::GetFileName($settingsTemplatePath)) -ForegroundColor White
-            exit 1
-        }
-        Copy-Item -LiteralPath $settingsTemplatePath -Destination $settingsPath -Force
-        $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
-        $configRecreatedFromTemplate = $true
-    } else {
-        Write-Fail "Settings file is required."
-    }
-}
-
-if ($configRecreatedFromTemplate) {
-    Write-Info "Restarting script to load recreated config."
-    & $script:EntryScriptPath @PSBoundParameters
-    exit $LASTEXITCODE
-}
-
-if ($settings -and ($settings.PSObject.Properties.Name -contains 'SharePassword') -and $null -ne $settings.SharePassword -and $settings.SharePassword -isnot [SecureString]) {
-    $pwdStr = $settings.SharePassword.ToString()
-    if (-not [string]::IsNullOrWhiteSpace($pwdStr)) {
-        $settings.SharePassword = ConvertTo-SecureString $pwdStr -AsPlainText -Force
-    }
-}
-
-$consoleNameMap = @{}
-$consoleSubDirMap = @{}
-$consoleDisplayNameMap = @{}
-$consoleExtensionsMap = @{}
-Write-ScriptDiag "Building console maps from console-names JSON"
-$consoleOpticalSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-foreach ($entry in $consoleNames) {
-    if (-not $entry.Name) { continue }
-    $key = $entry.Name.ToLowerInvariant()
-    if ($entry.ShortName) {
-        $consoleNameMap[$key] = $entry.ShortName
-    }
-    $consoleDisplayNameMap[$key] = $entry.Name
-    if ($entry.PSObject.Properties['SubDir'] -and $entry.SubDir) {
-        $consoleSubDirMap[$key] = $entry.SubDir
-    }
-    if ($entry.PSObject.Properties['Optical'] -and $entry.Optical -eq 'yes') {
-        $consoleOpticalSet.Add($entry.Name) | Out-Null
-    }
-    $extSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    $extSet.Add('.rom') | Out-Null
-    if ($entry.PSObject.Properties['Extensions'] -and $null -ne $entry.Extensions) {
-        foreach ($e in @($entry.Extensions)) {
-            $ex = $e.Trim()
-            if (-not $ex.StartsWith('.')) { $ex = '.' + $ex }
-            $extSet.Add($ex) | Out-Null
-        }
-    }
-    $consoleExtensionsMap[$key] = $extSet
-}
-
-function Initialize-TempRootDirectory {
-    param([Parameter(Mandatory = $true)][string]$Path)
-    Write-ScriptDiag "Initialize-TempRootDirectory: $Path"
-    try {
-        if (-not (Test-Path -LiteralPath $Path)) {
-            New-Item -Path $Path -ItemType Directory -Force -ErrorAction Stop | Out-Null
-            Write-ScriptDiag "Created temp folder"
-        } else {
-            Write-ScriptDiag "Temp folder exists"
-        }
-    } catch {
-        Write-Fail ("Temp folder is not reachable: {0} ({1})" -f (Format-PathForDisplay $Path), $_.Exception.Message)
-    }
-}
-
-function Get-SourcesPsd1EnabledEntries {
-    param([Parameter(Mandatory)][string]$LiteralPath)
-    $list = [System.Collections.Generic.List[object]]::new()
-    if (-not (Test-Path -LiteralPath $LiteralPath)) {
-        return $list.ToArray()
-    }
-    try {
-        $d = Import-PowerShellDataFile -LiteralPath $LiteralPath -ErrorAction Stop
-        foreach ($item in (Get-PsdImportedSourcesArray $d)) {
-            if (-not $item) { continue }
-            if ([string]::IsNullOrWhiteSpace($item.Name)) { continue }
-            $list.Add([pscustomobject]@{
-                Name       = [string]$item.Name
-                SourcePath = $item.SourcePath
-                Enabled    = $true
-            }) | Out-Null
-        }
-    } catch {
-        Write-Warn $_.Exception.Message
-    }
-    return $list.ToArray()
-}
-
-function Get-SourcesPsd1CommentedBlocks {
-    param([Parameter(Mandatory)][string]$LiteralPath)
-    $result = [System.Collections.Generic.List[object]]::new()
-    if (-not (Test-Path -LiteralPath $LiteralPath)) {
-        return $result.ToArray()
-    }
-    try {
-        $lines = [string[]](Get-Content -LiteralPath $LiteralPath)
-    } catch {
-        return $result.ToArray()
-    }
-    $i = 0
-    while ($i -lt $lines.Length) {
-        $line = $lines[$i]
-        if ($line -match '^\s*#\s+\@\{' ) {
-            $start = $i
-            $close = -1
-            for ($j = $i + 1; $j -lt $lines.Length; $j++) {
-                if (Test-Psd1SourcesBlockClosingLine -Line $lines[$j] -Commented) {
-                    $close = $j
-                    break
-                }
-            }
-            if ($close -lt 0) {
-                $i++
-                continue
-            }
-            $blk = ($lines[$start..$close] -join "`n")
-            $norm = $blk -replace '(?m)^\s*#\s*', ''
-            $name = $null
-            $src = $null
-            if ($norm -match "Name\s*=\s*'((?:[^']|'')*)'") {
-                $name = $Matches[1] -replace "''", "'"
-            }
-            if ($norm -match "SourcePath\s*=\s*'((?:[^']|'')*)'") {
-                $src = $Matches[1] -replace "''", "'"
-            }
-            if (-not [string]::IsNullOrWhiteSpace($name)) {
-                $result.Add([pscustomobject]@{
-                    Name       = $name
-                    SourcePath = $src
-                    Enabled    = $false
-                }) | Out-Null
-            }
-            $i = $close + 1
-            continue
-        }
-        if ($line -match '^\s+\@\{' ) {
-            $start = $i
-            $close = -1
-            for ($j = $i + 1; $j -lt $lines.Length; $j++) {
-                if (Test-Psd1SourcesBlockClosingLine -Line $lines[$j]) {
-                    $close = $j
-                    break
-                }
-            }
-            if ($close -lt 0) {
-                $i++
-                continue
-            }
-            $i = $close + 1
-            continue
-        }
-        $i++
-    }
-    return $result.ToArray()
-}
-
-function Get-SourcesPsd1UnifiedAlphabetical {
-    param(
-        [Parameter(Mandatory)][string]$LiteralPath,
-        [hashtable]$DisplayNameMap
-    )
-    $byKey = @{}
-
-    function Add-One {
-        param(
-            [Parameter(Mandatory)][object]$Item,
-            [Parameter(Mandatory)][bool]$IsEnabled
-        )
-        if (-not $Item) { return }
-        if ([string]::IsNullOrWhiteSpace($Item.Name)) { return }
-        $nk = ([string]$Item.Name).ToLowerInvariant()
-        if ($byKey.ContainsKey($nk)) { return }
-        $disp = [string]$Item.Name
-        if ($DisplayNameMap -and -not [string]::IsNullOrWhiteSpace($disp)) {
-            $kk = $disp.ToLowerInvariant()
-            if ($DisplayNameMap[$kk]) {
-                $disp = [string]$DisplayNameMap[$kk]
-            }
-        }
-        $byKey[$nk] = [pscustomobject]@{
-            Name       = [string]$Item.Name
-            Display    = $disp
-            SortKey    = $disp.ToLowerInvariant()
-            Enabled    = $IsEnabled
-            SourcePath = $Item.SourcePath
-        }
-    }
-
-    foreach ($item in @(Get-SourcesPsd1EnabledEntries -LiteralPath $LiteralPath)) {
-        Add-One $item $true
-    }
-    foreach ($item in @(Get-SourcesPsd1CommentedBlocks -LiteralPath $LiteralPath)) {
-        Add-One $item $false
-    }
-    @($byKey.Values | Sort-Object SortKey, Name)
-}
-
-function Write-NumberedSourcesConsoleBlockList {
-    param(
-        [AllowEmptyCollection()][object[]]$Blocks,
-        [hashtable]$DisplayNameMap,
-        [switch]$ShowSourcePaths,
-        [switch]$ColorEnabledState
-    )
-
-    # Undo mistaken outer wrap (e.g. return ,$arr) so we get N blocks, not one element whose .Name is all names.
-    if ($null -ne $Blocks -and $Blocks.Count -eq 1 -and $Blocks[0] -is [object[]]) {
-        $Blocks = $Blocks[0]
-    }
-
-    $entryList = [System.Collections.Generic.List[object]]::new()
-    foreach ($b in @($Blocks)) {
-        if (-not $b) { continue }
-        if ([string]::IsNullOrWhiteSpace($b.Name)) { continue }
-        $disp = [string]$b.Name
-        if ($DisplayNameMap -and -not [string]::IsNullOrWhiteSpace($disp)) {
-            $k = $disp.ToLowerInvariant()
-            if ($DisplayNameMap[$k]) { $disp = [string]$DisplayNameMap[$k] }
-        }
-        $entryList.Add([pscustomobject]@{
-            Block   = $b
-            Display = $disp
-            SortKey = $disp.ToLowerInvariant()
-        }) | Out-Null
-    }
-    $sorted = @($entryList.ToArray() | Sort-Object -Property SortKey, { [string]$_.Block.Name })
-    $n = $sorted.Count
-    if ($n -eq 0) {
-        Write-Host "  (none)" -ForegroundColor DarkYellow
-        Write-Host ""
-        return
-    }
-
-    $numList = [System.Collections.Generic.List[object]]::new()
-    for ($ri = 0; $ri -lt $n; $ri++) {
-        $numList.Add([pscustomobject]@{
-            Num     = $ri + 1
-            Display = [string]$sorted[$ri].Display
-            Block   = $sorted[$ri].Block
-        }) | Out-Null
-    }
-    $numbered = $numList.ToArray()
-
-    $getDisplayFg = {
-        param($blk)
-        if (-not $ColorEnabledState) { return 'White' }
-        foreach ($p in @($blk.PSObject.Properties)) {
-            if ($p.Name -eq 'Enabled' -and -not [bool]$p.Value) { return 'Red' }
-        }
-        return 'White'
-    }
-
-    $writePath = {
-        param($blk)
-        $pathRaw = $blk.SourcePath
-        if ($null -eq $pathRaw) { return }
-        $pathStr = if ($pathRaw -is [string]) { $pathRaw.Trim() } else { ([string]$pathRaw).Trim() }
-        if (-not [string]::IsNullOrWhiteSpace($pathStr)) {
-            Write-Host ("       {0}" -f (Format-PathForDisplay $pathStr)) -ForegroundColor DarkGray
-        }
-    }
-
-    if ($ShowSourcePaths -or $n -le 10) {
-        for ($ri = 0; $ri -lt $n; $ri++) {
-            $e = $numbered[$ri]
-            if ($ColorEnabledState) {
-                $nmFg = & $getDisplayFg $e.Block
-                $pf = ('  {0,3}. ' -f $e.Num)
-                Write-Host $pf -NoNewline -ForegroundColor White
-                Write-Host ([string]$e.Display) -ForegroundColor $nmFg
-            } else {
-                Write-Host (('  {0,3}. ' -f $e.Num) + [string]$e.Display) -ForegroundColor White
-            }
-            if ($ShowSourcePaths) {
-                & $writePath $e.Block
-            }
-        }
-        Write-Host ""
-        return
-    }
-
-    # Multi-column (n > 10, no paths): at most 3 columns; width from console buffer/window so lines do not wrap.
-    $usableWidth = 120
-    try {
-        $bw = $Host.UI.RawUI.BufferSize.Width
-        if ($bw -gt 0) { $usableWidth = $bw }
-    } catch { }
-    try {
-        $ww = $Host.UI.RawUI.WindowSize.Width
-        if ($ww -gt 0 -and $ww -lt $usableWidth) { $usableWidth = $ww }
-    } catch { }
-    if ($env:COLUMNS) {
-        $ec = 0
-        if ([int]::TryParse($env:COLUMNS, [ref]$ec) -and $ec -gt 0) {
-            $usableWidth = [Math]::Min($usableWidth, $ec)
-        }
-    }
-    $usableWidth = [Math]::Max(48, $usableWidth - 2)
-
-    $truncateCell = {
-        param([string]$Text, [int]$MaxChars)
-        if ($MaxChars -le 0) { return '' }
-        if ($Text.Length -le $MaxChars) { return $Text }
-        if ($MaxChars -le 3) { return $Text.Substring(0, [Math]::Min($Text.Length, $MaxChars)) }
-        return $Text.Substring(0, $MaxChars - 3) + '...'
-    }
-
-    # Target ~15 rows per column when possible; cap at 3 columns; reduce column count if cells would be too narrow.
-    $gap = '  '
-    $gapLen = $gap.Length
-    $minCellChars = 20
-    $idealCols = [int][Math]::Ceiling($n / 15.0)
-    $colCount = [Math]::Max(2, [Math]::Min(3, $idealCols))
-    while ($colCount -gt 2) {
-        $testMax = [int][Math]::Floor(($usableWidth - ($colCount - 1) * $gapLen) / $colCount)
-        if ($testMax -ge $minCellChars) { break }
-        $colCount--
-    }
-    $cellMax = [int][Math]::Floor(($usableWidth - ($colCount - 1) * $gapLen) / $colCount)
-    if ($colCount -eq 2 -and $cellMax -lt $minCellChars) {
-        $colCount = 1
-        $cellMax = $usableWidth
-    }
-
-    if ($colCount -le 1) {
-        for ($ri = 0; $ri -lt $n; $ri++) {
-            $e = $numbered[$ri]
-            $prefix = ('  {0,3}. ' -f $e.Num)
-            $maxDisp = [Math]::Max(0, $cellMax - $prefix.Length)
-            $dispTrunc = & $truncateCell ([string]$e.Display) $maxDisp
-            if ($ColorEnabledState) {
-                $nmFg = & $getDisplayFg $e.Block
-                Write-Host $prefix -NoNewline -ForegroundColor White
-                Write-Host $dispTrunc -ForegroundColor $nmFg
-            } else {
-                Write-Host ($prefix + $dispTrunc) -ForegroundColor White
-            }
-        }
-        Write-Host ""
-        return
-    }
-
-    $base = [int][Math]::Floor($n / $colCount)
-    $rem = $n % $colCount
-    $columnArrays = [System.Collections.Generic.List[object[]]]::new()
-    $off = 0
-    for ($ci = 0; $ci -lt $colCount; $ci++) {
-        $h = $base + ($(if ($ci -lt $rem) { 1 } else { 0 }))
-        if ($h -le 0) { continue }
-        $end = $off + $h - 1
-        $colArr = @($numbered[$off..$end])
-        $columnArrays.Add($colArr) | Out-Null
-        $off += $h
-    }
-    $activeCols = $columnArrays.Count
-    if ($activeCols -eq 0) {
-        Write-Host ""
-        return
-    }
-    $maxRows = 0
-    foreach ($colArr in $columnArrays) {
-        if ($colArr.Length -gt $maxRows) { $maxRows = $colArr.Length }
-    }
-    for ($row = 0; $row -lt $maxRows; $row++) {
-        for ($ci = 0; $ci -lt $activeCols; $ci++) {
-            if ($ci -gt 0) { Write-Host $gap -NoNewline }
-            $colArr = $columnArrays[$ci]
-            if ($row -lt $colArr.Length) {
-                $e = $colArr[$row]
-                $prefix = ('  {0,3}. ' -f $e.Num)
-                $maxDisp = [Math]::Max(0, $cellMax - $prefix.Length)
-                $dispTrunc = & $truncateCell ([string]$e.Display) $maxDisp
-                if ($ColorEnabledState) {
-                    $nmFg = & $getDisplayFg $e.Block
-                    $used = $prefix.Length + $dispTrunc.Length
-                    $pad = [Math]::Max(0, $cellMax - $used)
-                    Write-Host $prefix -NoNewline -ForegroundColor White
-                    Write-Host $dispTrunc -NoNewline -ForegroundColor $nmFg
-                    Write-Host (' ' * $pad) -NoNewline
-                } else {
-                    $cell = $prefix + $dispTrunc
-                    $padded = $cell.PadRight($cellMax)
-                    Write-Host $padded -NoNewline -ForegroundColor White
-                }
-            } else {
-                Write-Host (''.PadRight($cellMax)) -NoNewline
-            }
-        }
-        Write-Host ''
-    }
-    Write-Host ""
-}
-
-function Test-Psd1SourcesBlockClosingLine {
-    param(
-        [Parameter(Mandatory)][string]$Line,
-        [switch]$Commented
-    )
-    if ($Commented) {
-        return $Line -match '^\s*#\s*\}\s*,?\s*$'
-    }
-    $t = $Line.Trim()
-    return ($t -eq '}' -or $t -eq '},')
-}
-
-function Disable-SourcesPsd1ConsoleBlock {
-    param(
-        [Parameter(Mandatory = $true)][string]$LiteralPath,
-        [Parameter(Mandatory = $true)][string]$ConsoleName
-    )
-    if (-not (Test-Path -LiteralPath $LiteralPath)) {
-        Write-Warn "sources file not found: $LiteralPath"
-        return $false
-    }
-    try {
-        $lines = [System.Collections.Generic.List[string]]::new([string[]](Get-Content -LiteralPath $LiteralPath))
-    } catch {
-        Write-Warn $_.Exception.Message
-        return $false
-    }
-    $i = 0
-    while ($i -lt $lines.Count) {
-        $trim = $lines[$i].TrimStart()
-        if ($trim.StartsWith('#')) {
-            $i++
-            continue
-        }
-        if ($lines[$i] -match '^\s+\@\{' ) {
-            $start = $i
-            $close = -1
-            for ($j = $i + 1; $j -lt $lines.Count; $j++) {
-                if (Test-Psd1SourcesBlockClosingLine -Line $lines[$j]) {
-                    $close = $j
-                    break
-                }
-            }
-            if ($close -lt 0) {
-                Write-Warn ("Unclosed Sources hashtable block near line {0}." -f ($start + 1))
-                return $false
-            }
-            $seg = $lines[$start..$close]
-            $blk = $seg -join "`n"
-            $parsed = $null
-            if ($blk -match "Name\s*=\s*'((?:[^']|'')*)'") {
-                $parsed = $Matches[1] -replace "''", "'"
-            }
-            $nameMatch = $false
-            if ($null -ne $parsed) {
-                if ($parsed -ceq $ConsoleName) {
-                    $nameMatch = $true
-                } elseif ([string]::Equals($parsed, $ConsoleName, [StringComparison]::OrdinalIgnoreCase)) {
-                    $nameMatch = $true
-                }
-            }
-            if ($nameMatch) {
-                for ($k = $start; $k -le $close; $k++) {
-                    $ln = $lines[$k]
-                    if (-not $ln.TrimStart().StartsWith('#')) {
-                        $lines[$k] = '#' + $ln
-                    }
-                }
-                try {
-                    $lines | Set-Content -LiteralPath $LiteralPath -Encoding utf8
-                } catch {
-                    Write-Warn $_.Exception.Message
-                    return $false
-                }
-                try {
-                    $null = Import-PowerShellDataFile -LiteralPath $LiteralPath -ErrorAction Stop
-                } catch {
-                    Write-Warn ("sources.psd1 may be invalid after edit: {0}" -f $_.Exception.Message)
-                    return $false
-                }
-                return $true
-            }
-            $i = $close + 1
-            continue
-        }
-        $i++
-    }
-    Write-Warn ("No active Sources block matched Name = '{0}'." -f $ConsoleName)
-    return $false
-}
-
-function Enable-SourcesPsd1ConsoleBlock {
-    param(
-        [Parameter(Mandatory = $true)][string]$LiteralPath,
-        [Parameter(Mandatory = $true)][string]$ConsoleName
-    )
-    if (-not (Test-Path -LiteralPath $LiteralPath)) {
-        Write-Warn "sources file not found: $LiteralPath"
-        return $false
-    }
-    try {
-        $lines = [System.Collections.Generic.List[string]]::new([string[]](Get-Content -LiteralPath $LiteralPath))
-    } catch {
-        Write-Warn $_.Exception.Message
-        return $false
-    }
-    $i = 0
-    while ($i -lt $lines.Count) {
-        if ($lines[$i] -notmatch '^\s*#\s+\@\{' ) {
-            $i++
-            continue
-        }
-        $start = $i
-        $close = -1
-        for ($j = $i + 1; $j -lt $lines.Count; $j++) {
-            if (Test-Psd1SourcesBlockClosingLine -Line $lines[$j] -Commented) {
-                $close = $j
-                break
-            }
-        }
-        if ($close -lt 0) {
-            $i++
-            continue
-        }
-        $seg = $lines[$start..$close]
-        $blk = $seg -join "`n"
-        $norm = $blk -replace '(?m)^\s*#\s*', ''
-        $parsed = $null
-        if ($norm -match "Name\s*=\s*'((?:[^']|'')*)'") {
-            $parsed = $Matches[1] -replace "''", "'"
-        }
-        $nameMatch = $false
-        if ($null -ne $parsed) {
-            if ($parsed -ceq $ConsoleName) {
-                $nameMatch = $true
-            } elseif ([string]::Equals($parsed, $ConsoleName, [StringComparison]::OrdinalIgnoreCase)) {
-                $nameMatch = $true
-            }
-        }
-        if ($nameMatch) {
-            for ($k = $start; $k -le $close; $k++) {
-                $ln = $lines[$k]
-                if ($ln.TrimStart().StartsWith('#')) {
-                    $lines[$k] = $ln.Substring(1)
-                }
-            }
-            try {
-                $lines | Set-Content -LiteralPath $LiteralPath -Encoding utf8
-            } catch {
-                Write-Warn $_.Exception.Message
-                return $false
-            }
-            try {
-                $null = Import-PowerShellDataFile -LiteralPath $LiteralPath -ErrorAction Stop
-            } catch {
-                Write-Warn ("sources.psd1 may be invalid after edit: {0}" -f $_.Exception.Message)
-                return $false
-            }
-            return $true
-        }
-        $i = $close + 1
-    }
-    Write-Warn ("No commented Sources block matched Name = '{0}'." -f $ConsoleName)
-    return $false
-}
-
-function Update-SourcesPsd1ConsoleSourcePath {
-    param(
-        [Parameter(Mandatory = $true)][string]$LiteralPath,
-        [Parameter(Mandatory = $true)][string]$ConsoleName,
-        [Parameter(Mandatory = $true)][string]$NewSourcePath
-    )
-
-    function Test-ConsoleNameAgainstMatch {
-        param([string]$MatchedNameInner)
-        if ($null -eq $MatchedNameInner) { return $false }
-        if ($MatchedNameInner -ceq $ConsoleName) {
-            return $true
-        }
-        return [string]::Equals($MatchedNameInner, $ConsoleName, [StringComparison]::OrdinalIgnoreCase)
-    }
-
-    function Set-SourcesPathLineInSpan {
-        param(
-            [System.Collections.Generic.List[string]]$LineList,
-            [int]$StartIndex,
-            [int]$CloseIndex,
-            [string]$ReplacementPathEscaped
-        )
-        for ($k = $StartIndex; $k -le $CloseIndex; $k++) {
-            $raw = [string]$LineList[$k]
-            $idx = $raw.IndexOf('SourcePath', [System.StringComparison]::Ordinal)
-            if ($idx -lt 0) { continue }
-            $tail = $raw.Substring($idx)
-            if (($tail.TrimStart()) -notmatch '^SourcePath\s*=') {
-                continue
-            }
-            $LineList[$k] = $raw.Substring(0, $idx) + ('SourcePath = ''{0}''' -f $ReplacementPathEscaped)
-            return $true
-        }
-        return $false
-    }
-
-    if (-not (Test-Path -LiteralPath $LiteralPath)) {
-        Write-Warn "sources file not found: $LiteralPath"
-        return $false
-    }
-    $trimmedPath = ($NewSourcePath.Trim())
-    try {
-        $lines = [System.Collections.Generic.List[string]]::new([string[]](Get-Content -LiteralPath $LiteralPath))
-    } catch {
-        Write-Warn $_.Exception.Message
-        return $false
-    }
-
-    # Active (uncommented) blocks
-    $iActive = 0
-    while ($iActive -lt $lines.Count) {
-        $trim = $lines[$iActive].TrimStart()
-        if ($trim.StartsWith('#')) {
-            $iActive++
-            continue
-        }
-        if ($lines[$iActive] -match '^\s+\@\{' ) {
-            $start = $iActive
-            $close = -1
-            for ($j = $iActive + 1; $j -lt $lines.Count; $j++) {
-                if (Test-Psd1SourcesBlockClosingLine -Line $lines[$j]) {
-                    $close = $j
-                    break
-                }
-            }
-            if ($close -lt 0) {
-                Write-Warn ("Unclosed Sources hashtable block near line {0}." -f ($start + 1))
-                return $false
-            }
-            $seg = $lines[$start..$close]
-            $blk = $seg -join "`n"
-            $parsedName = $null
-            if ($blk -match "Name\s*=\s*'((?:[^']|'')*)'") {
-                $parsedName = $Matches[1] -replace "''", "'"
-            }
-            if (-not ($parsedName)) {
-                # ignore malformed block
-                $iActive = $close + 1
-                continue
-            }
-            if (Test-ConsoleNameAgainstMatch $parsedName) {
-                $esc = ($trimmedPath -replace "'", "''")
-                if (-not (Set-SourcesPathLineInSpan -LineList $lines -StartIndex $start -CloseIndex $close -ReplacementPathEscaped $esc)) {
-                    Write-Warn ("No SourcePath line inside active block for '{0}'." -f $ConsoleName)
-                    return $false
-                }
-                try {
-                    $lines | Set-Content -LiteralPath $LiteralPath -Encoding utf8
-                } catch {
-                    Write-Warn $_.Exception.Message
-                    return $false
-                }
-                try {
-                    $null = Import-PowerShellDataFile -LiteralPath $LiteralPath -ErrorAction Stop
-                } catch {
-                    Write-Warn ("sources.psd1 may be invalid after edit: {0}" -f $_.Exception.Message)
-                    return $false
-                }
-                return $true
-            }
-            $iActive = $close + 1
-            continue
-        }
-        $iActive++
-    }
-
-    # Commented (# line-prefixed) blocks
-    $iCom = 0
-    while ($iCom -lt $lines.Count) {
-        if ($lines[$iCom] -notmatch '^\s*#\s+\@\{' ) {
-            $iCom++
-            continue
-        }
-        $start = $iCom
-        $close = -1
-        for ($j = $iCom + 1; $j -lt $lines.Count; $j++) {
-            if (Test-Psd1SourcesBlockClosingLine -Line $lines[$j] -Commented) {
-                $close = $j
-                break
-            }
-        }
-        if ($close -lt 0) {
-            $iCom++
-            continue
-        }
-        $blk = ($lines[$start..$close] -join "`n")
-        $norm = $blk -replace '(?m)^\s*#\s*', ''
-        $parsedName = $null
-        if ($norm -match "Name\s*=\s*'((?:[^']|'')*)'") {
-            $parsedName = $Matches[1] -replace "''", "'"
-        }
-        if (($parsedName) -and (Test-ConsoleNameAgainstMatch $parsedName)) {
-            $esc = ($trimmedPath -replace "'", "''")
-            if (-not (Set-SourcesPathLineInSpan -LineList $lines -StartIndex $start -CloseIndex $close -ReplacementPathEscaped $esc)) {
-                Write-Warn ("No SourcePath line inside commented block for '{0}'." -f $ConsoleName)
-                return $false
-            }
-            try {
-                $lines | Set-Content -LiteralPath $LiteralPath -Encoding utf8
-            } catch {
-                Write-Warn $_.Exception.Message
-                return $false
-            }
-            try {
-                $null = Import-PowerShellDataFile -LiteralPath $LiteralPath -ErrorAction Stop
-            } catch {
-                Write-Warn ("sources.psd1 may be invalid after edit: {0}" -f $_.Exception.Message)
-                return $false
-            }
-            return $true
-        }
-        $iCom = $close + 1
-    }
-
-    Write-Warn ("No Sources block matched Name = '{0}' for SourcePath update." -f $ConsoleName)
-    return $false
-}
-
-function Update-GamePopulatorConsoleSourcesState {
-    param([Parameter(Mandatory)][string]$LiteralPath)
-    try {
-        $d = Import-PowerShellDataFile -LiteralPath $LiteralPath -ErrorAction Stop
-        $script:allConsoles = @(Get-PsdImportedSourcesArray $d)
-        $script:activeConsoleSourceCount = 0
-        if ($null -ne $script:allConsoles) {
-            $script:activeConsoleSourceCount = @($script:allConsoles | Where-Object {
-                -not [string]::IsNullOrWhiteSpace($_.Name) -and -not [string]::IsNullOrWhiteSpace($_.SourcePath)
-            }).Count
-        }
-    } catch {
-        Write-Warn $_.Exception.Message
-    }
-}
-
-function Invoke-TurnOnOffSystemsMenu {
-    param(
-        [Parameter(Mandatory)][string]$SourcesLiteralPath,
-        [Parameter(Mandatory)][string]$SourcesFileDisplayName,
-        [hashtable]$DisplayNameMap
-    )
-    while ($true) {
-        $enabledBlocks = @(Get-SourcesPsd1EnabledEntries -LiteralPath $SourcesLiteralPath)
-        $disabledBlocks = @(Get-SourcesPsd1CommentedBlocks -LiteralPath $SourcesLiteralPath)
-        Write-Host ""
-        Write-Host ("  {0,-21}" -f "Enabled systems:") -NoNewline -ForegroundColor DarkCyan
-        Write-Host $enabledBlocks.Count -ForegroundColor DarkYellow
-        Write-Host ("  {0,-21}" -f "Disabled systems:") -NoNewline -ForegroundColor DarkCyan
-        Write-Host $disabledBlocks.Count -ForegroundColor DarkYellow
-        Write-Host ""
-        Write-Host "  1. Toggle systems on or off." -ForegroundColor White
-        Write-Host "  2. Change a system's source path." -ForegroundColor White
-        Write-Host "  Q. Previous Menu" -ForegroundColor White
-        Write-Host ""
-        Invoke-OutputFlush
-        $sub = (Read-Host "Select 1-2, Q, or [Enter] to [Q]uit").Trim()
-        if ([string]::IsNullOrWhiteSpace($sub) -or $sub -match '^(?i)q$') {
-            Write-Host ""
-            Write-Host ""
-            break
-        }
-        switch ($sub) {
-            '1' {
-                $snapToggle = @()
-                $paintToggleList = $true
-                while ($true) {
-                    if ($paintToggleList) {
-                        Write-Host ''
-                        Write-Host '  Enabled   = white' -ForegroundColor White
-                        Write-Host '  Disabled  = red' -ForegroundColor Red
-                        Write-Host ''
-                        Write-Host '  Defined Systems:' -ForegroundColor DarkCyan
-                        $snapToggle = @(Get-SourcesPsd1UnifiedAlphabetical -LiteralPath $SourcesLiteralPath -DisplayNameMap $DisplayNameMap)
-                        if ($snapToggle.Count -eq 0) {
-                            Write-Warn "No consoles found in sources file."
-                            break
-                        }
-                        Write-NumberedSourcesConsoleBlockList -Blocks $snapToggle -DisplayNameMap $DisplayNameMap -ColorEnabledState
-                        $paintToggleList = $false
-                    }
-                    Write-Host 'Numbers (comma-separated)' -NoNewline -ForegroundColor White
-                    Write-Host ' toggle enabled/disabled status. ' -NoNewline -ForegroundColor DarkCyan
-                    Write-Host '(ex. ' -NoNewline -ForegroundColor DarkCyan
-                    Write-Host '1, 3, 4, 16...' -NoNewline -ForegroundColor White
-                    Write-Host ')' -ForegroundColor DarkCyan
-                    Write-Host 'AO' -NoNewline -ForegroundColor White
-                    Write-Host ' enables all systems · ' -NoNewline -ForegroundColor DarkCyan
-                    Write-Host 'AF' -NoNewline -ForegroundColor White
-                    Write-Host ' disables all systems' -ForegroundColor DarkCyan
-                    Write-Host 'R' -NoNewline -ForegroundColor White
-                    Write-Host ' refreshes the list · ' -NoNewline -ForegroundColor DarkCyan
-                    Write-Host 'Q' -NoNewline -ForegroundColor White
-                    Write-Host ' returns to the previous menu.' -ForegroundColor DarkCyan
-                    Write-Host ''
-                    Invoke-OutputFlush
-                    $rawMain = Read-Host 'Number(s), AO, AF, R, Q, or [Enter] to [Q]uit'
-                    if ($null -eq $rawMain) { $rawMain = '' }
-                    $rawTrim = $rawMain.Trim()
-                    if ([string]::IsNullOrWhiteSpace($rawTrim) -or $rawTrim -match '^(?i)q$') {
-                        break
-                    }
-                    if ($rawTrim -match '^(?i)r$') {
-                        $paintToggleList = $true
-                        continue
-                    }
-                    if ($rawTrim -match '^(?i)ao$') {
-                        $nOn = 0
-                        foreach ($picked in $snapToggle) {
-                            if ($picked.Enabled) { continue }
-                            if (Enable-SourcesPsd1ConsoleBlock -LiteralPath $SourcesLiteralPath -ConsoleName ([string]$picked.Name)) {
-                                $picked.Enabled = $true
-                                $nOn++
-                            }
-                        }
-                        if ($nOn -gt 0) {
-                            Update-GamePopulatorConsoleSourcesState -LiteralPath $SourcesLiteralPath
-                            Write-Info ("Enabled {0} system(s)." -f $nOn)
-                        } else {
-                            Write-Info 'All systems were already enabled.'
-                        }
-                        Write-Host ''
-                        continue
-                    }
-                    if ($rawTrim -match '^(?i)af$') {
-                        $nOff = 0
-                        foreach ($picked in $snapToggle) {
-                            if (-not $picked.Enabled) { continue }
-                            if (Disable-SourcesPsd1ConsoleBlock -LiteralPath $SourcesLiteralPath -ConsoleName ([string]$picked.Name)) {
-                                $picked.Enabled = $false
-                                $nOff++
-                            }
-                        }
-                        if ($nOff -gt 0) {
-                            Update-GamePopulatorConsoleSourcesState -LiteralPath $SourcesLiteralPath
-                            Write-Info ("Disabled {0} system(s)." -f $nOff)
-                        } else {
-                            Write-Info 'All systems were already disabled.'
-                        }
-                        Write-Host ''
-                        continue
-                    }
-                    $parts = @($rawTrim -split ',' | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-                    if (@($parts).Count -eq 0) {
-                        Write-Warn 'Enter numbers separated by commas, AO or AF for all on/off, R to refresh the list, or Q / Enter for the previous menu.'
-                        continue
-                    }
-                    foreach ($tok in @($parts)) {
-                        $num = 0
-                        if (-not [int]::TryParse($tok, [ref]$num)) {
-                            Write-Warn ('Not a whole number (skipped): "{0}".' -f $tok)
-                            continue
-                        }
-                        if ($num -lt 1 -or $num -gt $snapToggle.Count) {
-                            Write-Warn ('"{0}" is out of range; use 1-{1}.' -f $tok, $snapToggle.Count)
-                            continue
-                        }
-                        $picked = $snapToggle[$num - 1]
-                        if ($picked.Enabled) {
-                            if (Disable-SourcesPsd1ConsoleBlock -LiteralPath $SourcesLiteralPath -ConsoleName ([string]$picked.Name)) {
-                                Write-Info ('Disabled System: {0}' -f $picked.Display)
-                                Update-GamePopulatorConsoleSourcesState -LiteralPath $SourcesLiteralPath
-                                $picked.Enabled = $false
-                            }
-                        } elseif (Enable-SourcesPsd1ConsoleBlock -LiteralPath $SourcesLiteralPath -ConsoleName ([string]$picked.Name)) {
-                            Write-Info ('Enabled System: {0}' -f $picked.Display)
-                            Update-GamePopulatorConsoleSourcesState -LiteralPath $SourcesLiteralPath
-                            $picked.Enabled = $true
-                        }
-                    }
-                    Write-Host ''
-                }
-            }
-            '2' {
-                $snapPath = @()
-                $paintPathList = $true
-                while ($true) {
-                    if ($paintPathList) {
-                        Write-Host ''
-                        Write-Host '  Enabled   = white' -ForegroundColor White
-                        Write-Host '  Disabled  = red' -ForegroundColor Red
-                        Write-Host ''
-                        Write-Host '  Defined Systems:' -ForegroundColor DarkCyan
-                        $snapPath = @(Get-SourcesPsd1UnifiedAlphabetical -LiteralPath $SourcesLiteralPath -DisplayNameMap $DisplayNameMap)
-                        if ($snapPath.Count -eq 0) {
-                            Write-Warn 'No consoles found in sources file.'
-                            break
-                        }
-                        Write-NumberedSourcesConsoleBlockList -Blocks $snapPath -DisplayNameMap $DisplayNameMap -ColorEnabledState
-                        $paintPathList = $false
-                    }
-                    Write-Host 'Enter ' -NoNewline -ForegroundColor DarkCyan
-                    Write-Host 'console number' -NoNewline -ForegroundColor White
-                    Write-Host ' · ' -NoNewline -ForegroundColor DarkCyan
-                    Write-Host 'R' -NoNewline -ForegroundColor White
-                    Write-Host ' refreshes the list · ' -NoNewline -ForegroundColor DarkCyan
-                    Write-Host 'Q' -NoNewline -ForegroundColor White
-                    Write-Host ' returns to the previous menu.' -ForegroundColor DarkCyan
-                    Write-Host ''
-                    Invoke-OutputFlush
-                    $rawPick = Read-Host 'Number, R, Q, or [Enter] to [Q]uit'
-                    if ($null -eq $rawPick) { $rawPick = '' }
-                    $pickTrim = $rawPick.Trim()
-                    if ([string]::IsNullOrWhiteSpace($pickTrim) -or $pickTrim -match '^(?i)q$') {
-                        break
-                    }
-                    if ($pickTrim -match '^(?i)r$') {
-                        $paintPathList = $true
-                        continue
-                    }
-                    $numPick = 0
-                    if (-not [int]::TryParse($pickTrim, [ref]$numPick)) {
-                        Write-Warn 'Enter a whole number, R, Q, or [Enter] to go back.'
-                        continue
-                    }
-                    if ($numPick -lt 1 -or $numPick -gt $snapPath.Count) {
-                        Write-Warn ('Only 1-{0} are valid numbers, R, Q, or [Enter] to go back.' -f $snapPath.Count)
-                        continue
-                    }
-                    $sys = $snapPath[$numPick - 1]
-                    $abortOption4AfterPathMenu = $false
-                    while ($true) {
-                        Write-Host ''
-                        Write-Host ('  {0}' -f $sys.Display) -ForegroundColor DarkCyan
-                        $pathDisp = ''
-                        if ($null -ne $sys.SourcePath) {
-                            $pathDisp = ([string]$sys.SourcePath).Trim()
-                        }
-                        if ([string]::IsNullOrWhiteSpace($pathDisp)) {
-                            Write-Host '  Current SourcePath: (none)' -ForegroundColor DarkYellow
-                        } else {
-                            Write-Host ('  Current SourcePath: {0}' -f (Format-PathForDisplay $pathDisp)) -ForegroundColor White
-                        }
-                        Write-Host '  Pressing Enter (without a value) returns to the list without changes · [Q] returns to the previous menu.' -ForegroundColor DarkGray
-                        Invoke-OutputFlush
-                        $newSrc = Read-Host '  New SourcePath'
-                        if ($null -eq $newSrc) { $newSrc = '' }
-                        $nts = $newSrc.Trim()
-                        if ([string]::IsNullOrWhiteSpace($nts)) {
-                            Write-Host ''
-                            break
-                        }
-                        if ($nts -match '^(?i)q$') {
-                            $abortOption4AfterPathMenu = $true
-                            break
-                        }
-                        if (Update-SourcesPsd1ConsoleSourcePath -LiteralPath $SourcesLiteralPath -ConsoleName ([string]$sys.Name) -NewSourcePath $nts) {
-                            Write-Host ('  Updated SourcePath for {0}' -f $sys.Display) -ForegroundColor Yellow
-                            Write-Host ''
-                            Update-GamePopulatorConsoleSourcesState -LiteralPath $SourcesLiteralPath
-                            $sys.SourcePath = [string]$nts
-                            break
-                        }
-                    }
-                    if ($abortOption4AfterPathMenu) {
-                        break
-                    }
-                }
-            }
-            Default {
-                Write-Warn "Select 1-2, Q, or Enter for the previous menu."
-            }
-        }
-    }
-}
-
-function Format-SettingsJsonValueForDisplay {
-    param($Value)
-    if ($null -eq $Value) { return '(null)' }
-    if ($Value -is [SecureString]) {
-        $bptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
-        try {
-            $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bptr)
-        } finally {
-            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bptr)
-        }
-        if ([string]::IsNullOrWhiteSpace($plain)) { return '(empty)' }
-        return $plain
-    }
-    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
-        $items = @(foreach ($x in $Value) { $x.ToString().Trim() })
-        return '[' + (($items | ForEach-Object { '"' + $_ + '"' }) -join ', ') + ']'
-    }
-    $t = $Value.ToString()
-    if ([string]::IsNullOrWhiteSpace($t)) { return '(empty)' }
-    return $t
-}
-
-function Set-GamePopulatorSharePasswordAsSecure {
-    param([Parameter(Mandatory)][object]$SettingsObj)
-    if (-not ($SettingsObj.PSObject.Properties.Name -contains 'SharePassword')) { return }
-    $v = $SettingsObj.SharePassword
-    if ($null -eq $v) { return }
-    if ($v -is [SecureString]) { return }
-    $pwdStr = $v.ToString()
-    if ([string]::IsNullOrWhiteSpace($pwdStr)) { return }
-    $SettingsObj.SharePassword = ConvertTo-SecureString $pwdStr -AsPlainText -Force
-}
-
-function Invoke-EditSettingsJsonMenu {
-    param(
-        [Parameter(Mandatory = $true)][string]$SettingsLiteralPath,
-        [Parameter(Mandatory = $true)][ref]$SettingsRef
-    )
-    while ($true) {
-        Write-Host ""
-        $rawJson = $null
-        try {
-            $rawJson = Get-Content -LiteralPath $SettingsLiteralPath -Raw
-        } catch {
-            Write-Warn "Could not read settings file: $($_.Exception.Message)"
-            return
-        }
-        $view = $null
-        try {
-            $view = $rawJson | ConvertFrom-Json
-        } catch {
-            Write-Warn "Settings JSON is invalid: $($_.Exception.Message)"
-            return
-        }
-        $ordered = [ordered]@{}
-        foreach ($p in @($view.PSObject.Properties)) {
-            $ordered[$p.Name] = $p.Value
-        }
-        $skipEditKeys = [string[]]@('SevenZipExe', 'ArchiveExtensions')
-        $names = [string[]]@(
-            foreach ($k in [string[]]@($ordered.Keys)) {
-                if ($k -in $skipEditKeys) { continue }
-                $k
-            }
-        )
-        $nameColW = 0
-        foreach ($kn in $names) {
-            if ($kn.Length -gt $nameColW) { $nameColW = $kn.Length }
-        }
-        if ($nameColW -lt 8) { $nameColW = 8 }
-        for ($i = 0; $i -lt $names.Count; $i++) {
-            $n = $names[$i]
-            $num = $i + 1
-            $disp = Format-SettingsJsonValueForDisplay -Value $ordered[$n]
-            Write-Host ('  ' + ([string]$num).PadLeft(2) + '. ' + ([string]$n).PadRight($nameColW) + '  ') -NoNewline -ForegroundColor White
-            Write-Host $disp -ForegroundColor Yellow
-        }
-        Write-Host ""
-        Invoke-OutputFlush
-        $pick = (Read-Host "Number, or [Enter] to [Q]uit").Trim()
-        if ([string]::IsNullOrWhiteSpace($pick) -or $pick -match '^(?i)q(uit)?$') {
-            return
-        }
-        if ($pick -notmatch '^\d+$') {
-            Write-Warn "Enter a number, or Q to go back."
-            continue
-        }
-        $sel = [int]$pick
-        if ($sel -lt 1 -or $sel -gt $names.Count) {
-            Write-Warn ("Choose 1-{0}, or Q." -f $names.Count)
-            continue
-        }
-        $propName = $names[$sel - 1]
-        $dirty = $false
-        switch ($propName) {
-            'SharePassword' {
-                Write-Host 'Stored as plain text in JSON. Type clear to remove the password. [Enter] leaves it unchanged.' -ForegroundColor DarkGray
-                $inp = Read-Host "New SharePassword"
-                if ($null -eq $inp) {
-                    continue
-                }
-                $inp = $inp.Trim()
-                if (($inp.Length -eq 0)) {
-                    # unchanged
-                } elseif ($inp -match '^(?i)clear$') {
-                    $ordered[$propName] = ''
-                    $dirty = $true
-                } else {
-                    $ordered[$propName] = $inp
-                    $dirty = $true
-                }
-            }
-            Default {
-                $inp = Read-Host ("New value for $propName [Enter unchanged]")
-                if ($null -eq $inp) { $inp = '' }
-                $inp = $inp.Trim()
-                if (-not [string]::IsNullOrWhiteSpace($inp)) {
-                    $ordered[$propName] = $inp
-                    $dirty = $true
-                }
-            }
-        }
-        if (-not $dirty) {
-            continue
-        }
-        try {
-            $jsonOut = $ordered | ConvertTo-Json -Depth 10
-            $jsonOut | Set-Content -LiteralPath $SettingsLiteralPath -Encoding utf8
-        } catch {
-            Write-Warn "Could not save settings: $($_.Exception.Message)"
-            continue
-        }
-        try {
-            $fresh = Get-Content -LiteralPath $SettingsLiteralPath -Raw | ConvertFrom-Json
-            Set-GamePopulatorSharePasswordAsSecure -SettingsObj $fresh
-            $SettingsRef.Value = $fresh
-        } catch {
-            Write-Warn "Saved file, but reload failed: $($_.Exception.Message)"
-        }
-        Write-Info "Changes saved."
-    }
-}
-
-function Show-MainMenu {
-    Write-Host "Maintenance:" -ForegroundColor Cyan
-    Write-Host "  1. Toggle visibility and/or edit system source paths." -ForegroundColor White
-    Write-Host "  2. Edit network share mapping." -ForegroundColor White
-    Write-Host "  3. Destination file & folder cleanup." -ForegroundColor White
-    Write-Host "  4. Recreate config files from template files." -ForegroundColor White
-    Write-Host "  5. Install latest files from GitHub." -ForegroundColor White
-    Write-Host "  6. Reset network SMB connections." -ForegroundColor White
-    Write-Host ""
-
-    Write-Host "Actions:" -ForegroundColor Cyan
-    Write-Host "  7. Archive extraction and file copying, with region organization." -ForegroundColor White
-    Write-Host "  8. Archive extraction and file copying, without region organization." -ForegroundColor White
-    Write-Host "  9. Custom run (folders and paths as you specify)." -ForegroundColor White
-    Write-Host ""
-
-    Write-Host "  E. Exit." -ForegroundColor White
-
-    Write-Host ""
-    Write-Host "Note:" -ForegroundColor Cyan
-    Write-Host "All options under Maintenance restart the script automatically when finished so new values are loaded." -ForegroundColor DarkYellow
-}
-
-function Read-CustomRunConfiguration {
-    Write-Host ""
-    while ($true) {
-        $rawSrc = (Read-Host 'What is the source folder').Trim()
-        if (-not [string]::IsNullOrWhiteSpace($rawSrc)) { break }
-        Write-Warn 'Source folder is required.'
-    }
-    while ($true) {
-        $rawDest = (Read-Host 'What is the destination folder').Trim()
-        if (-not [string]::IsNullOrWhiteSpace($rawDest)) { break }
-        Write-Warn 'Destination folder is required.'
-    }
-    Write-Host ""
-    Write-Host "Destination share credentials (UNC only; press Enter for no user/password, e.g. a public share)." -ForegroundColor DarkGray
-    $destUserIn = (Read-Host 'Destination user name').Trim()
-    $destPassSec = Read-Host 'Destination password' -AsSecureString
-    if ($null -ne $destPassSec) {
-        $bptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($destPassSec)
-        try {
-            $passPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bptr)
-            if ([string]::IsNullOrWhiteSpace($passPlain)) {
-                $destPassSec = $null
-            }
-        } finally {
-            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bptr)
-        }
-    }
-    Write-Host ''
-    while ($true) {
-        $rawTmp = (Read-Host 'What is the temp directory').Trim()
-        if (-not [string]::IsNullOrWhiteSpace($rawTmp)) { break }
-        Write-Warn 'Temp directory is required.'
-    }
-    Write-Host ''
-    $orgRegions = Read-YesNoDefaultYes 'Do you want to organize the images by region?'
-    $orgExisting = Read-YesNoDefaultNo 'Organize files already on the destination folder before copying (layout / region rules)?'
-    $cleanupAfter = Read-YesNoDefaultYes 'Run destination cleanup after copying (invalid extensions, empty folders)?'
-
-    $resolvedSrc = Resolve-DestinationPath -Path $rawSrc
-    $resolvedDest = Resolve-DestinationPath -Path $rawDest
-    $resolvedDest = Resolve-DestinationGamesSubfolder -Path $resolvedDest
-    $resolvedTmp = Resolve-DestinationPath -Path $rawTmp
-
-    Write-Host ''
-    Write-Host '===[ Confirm Settings ]===' -ForegroundColor DarkCyan
-    Write-Host ('  {0,-26}' -f 'Source:') -NoNewline -ForegroundColor White
-    Write-Host (Format-PathForDisplay $resolvedSrc) -ForegroundColor DarkGray
-    Write-Host ('  {0,-26}' -f 'Destination:') -NoNewline -ForegroundColor White
-    Write-Host (Format-PathForDisplay $resolvedDest) -ForegroundColor DarkGray
-    Write-Host ('  {0,-26}' -f 'Destination user:') -NoNewline -ForegroundColor White
-    Write-Host ($(if ([string]::IsNullOrWhiteSpace($destUserIn)) { '(none)' } else { $destUserIn })) -ForegroundColor DarkGray
-    Write-Host ('  {0,-26}' -f 'Temp Directory:') -NoNewline -ForegroundColor White
-    Write-Host (Format-PathForDisplay $resolvedTmp) -ForegroundColor DarkGray
-    Write-Host ('  {0,-26}' -f 'Organize images by region:') -NoNewline -ForegroundColor White
-    Write-Host ($(if ($orgRegions) { 'Yes' } else { 'No' })) -ForegroundColor DarkGray
-    Write-Host ('  {0,-26}' -f 'Organize existing on dest:') -NoNewline -ForegroundColor White
-    Write-Host ($(if ($orgExisting) { 'Yes' } else { 'No' })) -ForegroundColor DarkGray
-    Write-Host ('  {0,-26}' -f 'Cleanup after copy:') -NoNewline -ForegroundColor White
-    Write-Host ($(if ($cleanupAfter) { 'Yes' } else { 'No' })) -ForegroundColor DarkGray
-    Write-Host ''
-
-    if (-not (Read-YesNoDefaultYes 'Proceed with this custom run?')) {
-        & $script:EntryScriptPath @script:GamePopulatorBoundParameters
-        exit $LASTEXITCODE
-    }
-
-    return @{
-        SourcePath                  = $resolvedSrc
-        DestinationPath             = $resolvedDest
-        TempPath                    = $resolvedTmp
-        OrganizeRegions             = $orgRegions
-        OrganizeExistingDestination = $orgExisting
-        DoCleanup                   = $cleanupAfter
-        DestinationShareUser        = $destUserIn
-        DestinationSharePassword    = $destPassSec
-    }
-}
 
 $script:PostMenuDestinationInit = $null
 $script:CustomRunActive = $false
@@ -1473,30 +310,46 @@ $doCleanup = $false
 $doProcessing = $true
 $doRecreateConfig = $false
 $script:RestartAfterInteractiveCleanup = $false
+$script:GpMigrateAssetMode = 'extract'
+$script:GpPendingSingleConsoleForMigrate = $null
+$script:GpSingleSystemInteractiveSession = $false
+$script:GpPostMigrateInteractiveRepeatKind = ''
 
-if (-not $PSBoundParameters.ContainsKey('DestinationRoot') -and $settings.DestinationRoot) {
+$gpLaunchIntent = Read-GamePopulatorLaunchIntent
+$Org = [bool]$gpLaunchIntent.Org
+$NoOrg = [bool]$gpLaunchIntent.NoOrg
+$Cleanup = [bool]$gpLaunchIntent.Cleanup
+$Resume = [bool]$gpLaunchIntent.Resume
+$SingleSystemInteractive = [bool]$gpLaunchIntent.SingleSystemInteractive
+$CustomRunInteractive = [bool]$gpLaunchIntent.CustomRunInteractive
+$OnlyConsoles = $gpLaunchIntent.OnlyConsoles
+
+if (-not [string]::IsNullOrWhiteSpace([string]$gpLaunchIntent.DestinationRoot)) {
+    $DestinationRoot = Resolve-DestinationPath -Path (($gpLaunchIntent.DestinationRoot).ToString().Trim())
+}
+elseif ($settings.DestinationRoot) {
     $DestinationRoot = Resolve-DestinationPath -Path $settings.DestinationRoot
 }
-if (-not $PSBoundParameters.ContainsKey('TempRoot') -and $settings.TempRoot) {
+
+if (-not [string]::IsNullOrWhiteSpace([string]$gpLaunchIntent.TempRoot)) {
+    $TempRoot = ($gpLaunchIntent.TempRoot).ToString().Trim()
+}
+elseif ($settings.TempRoot) {
     $TempRoot = $settings.TempRoot
 }
 
 if (-not $DestinationRoot) {
-    Write-Host 'Edit the settings file ' -NoNewline -ForegroundColor DarkYellow
-    Write-Host 'settings.json' -NoNewline -ForegroundColor White
-    Write-Host ', or pass the ' -NoNewline -ForegroundColor DarkYellow
-    Write-Host '-DestinationRoot' -NoNewline -ForegroundColor White
-    Write-Host ' parameter.' -ForegroundColor DarkYellow
+    Write-Host 'Destination root is not set. Edit ' -NoNewline -ForegroundColor DarkYellow
+    Write-Host 'libraries\settings.json' -NoNewline -ForegroundColor White
+    Write-Host ' (DestinationRoot).' -ForegroundColor DarkYellow
     Write-Fail 'DestinationRoot is required.'
 }
 $DestinationRoot = Resolve-DestinationPath -Path $DestinationRoot
 $DestinationRoot = Resolve-DestinationGamesSubfolder -Path $DestinationRoot
 if (-not $TempRoot) {
-    Write-Host 'Edit the settings file ' -NoNewline -ForegroundColor DarkYellow
-    Write-Host 'settings.json' -NoNewline -ForegroundColor White
-    Write-Host ', or pass the ' -NoNewline -ForegroundColor DarkYellow
-    Write-Host '-TempRoot' -NoNewline -ForegroundColor White
-    Write-Host ' parameter.' -ForegroundColor DarkYellow
+    Write-Host 'Temp folder is not set. Edit ' -NoNewline -ForegroundColor DarkYellow
+    Write-Host 'libraries\settings.json' -NoNewline -ForegroundColor White
+    Write-Host ' (TempRoot).' -ForegroundColor DarkYellow
     Write-Fail 'TempRoot is required.'
 }
 if ($TempRoot) {
@@ -1506,8 +359,11 @@ if ($TempRoot) {
 $activeConsoleSourceCount = 0
 if ($null -ne $allConsoles) {
     $activeConsoleSourceCount = @($allConsoles | Where-Object {
-        -not [string]::IsNullOrWhiteSpace($_.Name) -and -not [string]::IsNullOrWhiteSpace($_.SourcePath)
-    }).Count
+            $_ `
+                -and (Test-GamePopulatorMergedSourceEntryEnabled $_) `
+                -and -not [string]::IsNullOrWhiteSpace($_.Name) `
+                -and -not [string]::IsNullOrWhiteSpace($_.SourcePath)
+        }).Count
 }
 
 $settingsLabelWidth = 26
@@ -1517,7 +373,7 @@ Write-Host ("  - {0,-$settingsLabelWidth}" -f 'Destination:') -NoNewline -Foregr
 Write-Host $DestinationRoot -ForegroundColor Green
 Write-Host ("  - {0,-$settingsLabelWidth}" -f 'Temp Folder:') -NoNewline -ForegroundColor White
 Write-Host (Format-PathForDisplay $TempRoot) -ForegroundColor Green
-Write-Host ("  - {0,-$settingsLabelWidth}" -f 'Active consoles:') -NoNewline -ForegroundColor White
+Write-Host ("  - {0,-$settingsLabelWidth}" -f 'Active components:') -NoNewline -ForegroundColor White
 Write-Host $activeConsoleSourceCount.ToString() -ForegroundColor Green
 Write-Host ""
 
@@ -1527,13 +383,25 @@ if ($menuOptions.Count -gt 1) {
     Write-Fail "Multiple mode switches passed. Use only one."
 }
 
+if (($Org -or $NoOrg -or $Cleanup) -and ($SingleSystemInteractive -or $CustomRunInteractive)) {
+    Write-Fail "Do not combine Org/NoOrg/Cleanup with a guided migrate in the same launch intent."
+}
+
+if ($SingleSystemInteractive -and $CustomRunInteractive) {
+    Write-Fail "Use only one guided migrate mode (single-system or custom run) per launch intent."
+}
+
 if ($Org) {
     $organizeRegions = $true
     $doCleanup = $true
-} elseif ($NoOrg) {
+    $script:GpMigrateAssetMode = 'extract'
+}
+elseif ($NoOrg) {
     $organizeRegions = $false
     $doCleanup = $true
-} elseif ($Cleanup) {
+    $script:GpMigrateAssetMode = 'extract'
+}
+elseif ($Cleanup) {
     $doProcessing = $false
     $organizeRegions = $false
     $doCleanup = $true
@@ -1542,7 +410,25 @@ if ($Org) {
     if (-not $stdinRedirected) {
         $script:RestartAfterInteractiveCleanup = $true
     }
-} else {
+}
+elseif ($SingleSystemInteractive) {
+    Clear-Host | Out-Null
+    $wizSs = Invoke-GpSingleSystemMigrateInteractiveWizard -DisplayNameMap $consoleDisplayNameMap -DestinationRootRaw $DestinationRoot -ShareUser ($settings.ShareUser) -SharePassword $settings.SharePassword -ConsoleOpticalDisplaySetHashSetObj $consoleOpticalSet -AllConsolesMerged $allConsoles
+    if ($null -eq $wizSs) {
+        Write-Info 'Restarting script to return to the main menu...'
+        Invoke-GamePopulatorScriptRestart
+    }
+    Invoke-GpApplySingleSystemWizardResult -WizSs $wizSs
+}
+elseif ($CustomRunInteractive) {
+    $crx = Read-CustomRunConfigurationWithConnectivityRetries
+    if ($null -eq $crx) {
+        Write-Info 'Restarting script to return to the main menu...'
+        Invoke-GamePopulatorScriptRestart
+    }
+    Invoke-GpApplyCustomRunInteractiveResult -Crx $crx
+}
+else {
     $menuValid = $false
     $mainMenuPrinted = $false
     while (-not $menuValid) {
@@ -1552,37 +438,72 @@ if ($Org) {
             $mainMenuPrinted = $true
         }
         Invoke-OutputFlush
-        Write-ScriptDiag "Read-Host menu (waiting for 1-9, E, or [Enter] to exit)"
-        $choice = (Read-Host "Select options 1-9 or [Enter] to exit").Trim()
+        Write-ScriptDiag "Read-Host menu (waiting for 1-14, H, E, or [Enter] to exit)"
+        if (-not (Test-GamePopulatorResolvedShareFolderPrecheckOk -PathResolvedOrRaw $DestinationRoot)) {
+            Write-Host 'Warning:' -ForegroundColor DarkRed
+            Write-Host ' - The destination location is not reachable.' -ForegroundColor Red
+            Write-Host ' -- Reestablish the connection or define another destination (option 2 from main menu).' -ForegroundColor Red
+            Write-Host ""
+        }
+        $choice = (Read-Host "Select 1-14, H for help, or [Enter] to exit").Trim()
         if ([string]::IsNullOrWhiteSpace($choice) -or $choice -match '^(?i)(e|exit)$') { exit 0 }
         switch ($choice) {
             '1' {
-                Invoke-TurnOnOffSystemsMenu -SourcesLiteralPath $consolePath -SourcesFileDisplayName 'sources.psd1' -DisplayNameMap $consoleDisplayNameMap
+                Invoke-GamePopulatorSourceManagementMenu
                 Write-Info "Restarting script to reload configuration..."
-                & $script:EntryScriptPath @PSBoundParameters
+                Invoke-GamePopulatorScriptRestart
                 exit $LASTEXITCODE
             }
             '2' {
                 Invoke-EditSettingsJsonMenu -SettingsLiteralPath $settingsPath -SettingsRef ([ref]$settings)
                 Write-Info "Restarting script to reload configuration..."
-                & $script:EntryScriptPath @PSBoundParameters
+                Invoke-GamePopulatorScriptRestart
                 exit $LASTEXITCODE
             }
             '3' {
+                Invoke-GamePopulatorConfigurationValidationReport
+                Write-Host "Press " -NoNewline -ForegroundColor White
+                Write-Host "[Enter]" -NoNewline -ForegroundColor Green
+                Write-Host " to restart and return to the menu." -ForegroundColor White
+                Invoke-OutputFlush
+                try {
+                    do {
+                        $k = [Console]::ReadKey($true)
+                    } while ($k.Key -ne [ConsoleKey]::Enter)
+                }
+                catch {
+                    $null = Read-Host 'Press Enter to restart the script.'
+                }
+                Write-Info 'Restarting script...'
+                Invoke-GamePopulatorScriptRestart
+                exit $LASTEXITCODE
+            }
+            '4' {
+                Invoke-GamePopulatorActiveSourceLocationsValidationReport
+                Write-Host "Press " -NoNewline -ForegroundColor White
+                Write-Host "[Enter]" -NoNewline -ForegroundColor Green
+                Write-Host " to restart and return to the menu." -ForegroundColor White
+                Invoke-OutputFlush
+                try {
+                    do {
+                        $k = [Console]::ReadKey($true)
+                    } while ($k.Key -ne [ConsoleKey]::Enter)
+                }
+                catch {
+                    $null = Read-Host 'Press Enter to restart the script.'
+                }
+                Write-Info 'Restarting script...'
+                Invoke-GamePopulatorScriptRestart
+                exit $LASTEXITCODE
+            }
+            '5' {
                 $script:RestartAfterInteractiveCleanup = $true
                 $doProcessing = $false; $organizeRegions = $false; $doCleanup = $true; $menuValid = $true
-            }
-            '4' { $doRecreateConfig = $true; $menuValid = $true }
-            '5' {
-                $null = Invoke-GamePopulatorSelfUpdate -ScriptRoot $scriptRoot
-                Write-Info "Restarting script..."
-                & $script:EntryScriptPath @PSBoundParameters
-                exit $LASTEXITCODE
             }
             '6' {
                 Write-Host ""
                 Write-Host "Disconnects SMB mappings managed by this script, then reconnects the destination folder from " -NoNewline -ForegroundColor White
-                Write-Host "settings.json" -NoNewline -ForegroundColor Green
+                Write-Host "libraries\settings.json" -NoNewline -ForegroundColor Green
                 Write-Host "." -ForegroundColor White
                 $option6NetworkRan = $false
                 if (Read-YesNoDefaultNo "Proceed?") {
@@ -1606,12 +527,14 @@ if ($Org) {
                         if ($destReconnect.StartsWith('\\')) {
                             $script:PostMenuDestinationInit = $reInfo
                             Write-Info ("Destination share connected: {0}" -f $reInfo.Path)
-                        } else {
+                        }
+                        else {
                             $script:PostMenuDestinationInit = $null
                             Write-Info ("Destination folder ready (local path): {0}" -f $reInfo.Path)
                         }
                         Write-Host ""
-                    } catch {
+                    }
+                    catch {
                         $script:PostMenuDestinationInit = $null
                         $msg = $_.Exception.Message
                         $hint = Expand-SmbConnectErrorHint -RawMessage $msg -UncPath $destReconnect
@@ -1630,51 +553,92 @@ if ($Org) {
                         do {
                             $k = [Console]::ReadKey($true)
                         } while ($k.Key -ne [ConsoleKey]::Enter)
-                    } catch {
+                    }
+                    catch {
                         $null = Read-Host "Press Enter to restart the script."
                     }
                     Write-Host ""
                 }
                 Write-Info "Restarting script to reload configuration..."
-                & $script:EntryScriptPath @PSBoundParameters
+                Invoke-GamePopulatorScriptRestart
                 exit $LASTEXITCODE
             }
-            '7' { $organizeRegions = $true; $doCleanup = $true; $menuValid = $true }
-            '8' { $organizeRegions = $false; $doCleanup = $true; $menuValid = $true }
-            '9' {
-                $script:PostMenuDestinationInit = $null
-                $cr = Read-CustomRunConfiguration
-                if ($null -eq $cr) { continue }
-                $script:CustomRunSourcePath = $cr.SourcePath
-                $script:CustomRunDestDisplay = (Format-PathForDisplay $cr.DestinationPath)
-                $script:CustomRunDestUser = $cr.DestinationShareUser
-                $script:CustomRunDestPassword = $cr.DestinationSharePassword
-                $DestinationRoot = $cr.DestinationPath
-                $TempRoot = $cr.TempPath
-                $organizeRegions = [bool]$cr.OrganizeRegions
-                $script:CustomRunOrganizeExisting = [bool]$cr.OrganizeExistingDestination
-                $doCleanup = [bool]$cr.DoCleanup
-                $doProcessing = $true
-                $doRecreateConfig = $false
-
-                $extUnion = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-                foreach ($kv in $consoleExtensionsMap.GetEnumerator()) {
-                    if ($null -eq $kv.Value) { continue }
-                    foreach ($ex in $kv.Value) {
-                        $extUnion.Add($ex) | Out-Null
-                    }
+            '7' { $doRecreateConfig = $true; $menuValid = $true }
+            '8' {
+                $null = Invoke-GamePopulatorSelfUpdate -ScriptRoot $scriptRoot -LibrariesRoot $librariesRoot
+                Write-Info "Restarting script..."
+                Invoke-GamePopulatorScriptRestart
+                exit $LASTEXITCODE
+            }
+            '9' { $script:GpMigrateAssetMode = 'extract'; $organizeRegions = $true; $doCleanup = $true; $menuValid = $true }
+            '10' { $script:GpMigrateAssetMode = 'extract'; $organizeRegions = $false; $doCleanup = $true; $menuValid = $true }
+            '11' {
+                if (-not (Test-GamePopulatorResolvedShareFolderPrecheckOk -PathResolvedOrRaw $DestinationRoot)) {
+                    Write-Warn 'The destination configured in libraries\settings.json is not reachable. Use main menu option 2 before running archive→ZIP migration.'
+                    continue
                 }
-                if ($extUnion.Count -eq 0) {
-                    $extUnion.Add('.rom') | Out-Null
-                }
-                $consoleNameMap['custom run'] = 'Custom'
-                $consoleDisplayNameMap['custom run'] = 'Custom run'
-                $consoleExtensionsMap['custom run'] = $extUnion
-                $script:CustomRunActive = $true
+                $organizeRegions = $true
+                $script:GpMigrateAssetMode = 'zipDest'
+                $doCleanup = $true
                 $menuValid = $true
             }
-            Default {
-                Write-Warn "Invalid selection. Enter 1-9, E to exit, or press Enter to exit."
+            '12' {
+                if (-not (Test-GamePopulatorResolvedShareFolderPrecheckOk -PathResolvedOrRaw $DestinationRoot)) {
+                    Write-Warn 'The destination configured in libraries\settings.json is not reachable. Use main menu option 2 before running archive→ZIP migration.'
+                    continue
+                }
+                $organizeRegions = $false
+                $script:GpMigrateAssetMode = 'zipDest'
+                $doCleanup = $true
+                $menuValid = $true
+            }
+            '13' {
+                if (-not (Test-GamePopulatorResolvedShareFolderPrecheckOk -PathResolvedOrRaw $DestinationRoot)) {
+                    Write-Warn 'The destination configured in libraries\settings.json is not reachable. Use main menu option 2 before single-system copy.'
+                    continue
+                }
+                Clear-Host | Out-Null
+                $wizSsMn = Invoke-GpSingleSystemMigrateInteractiveWizard -DisplayNameMap $consoleDisplayNameMap -DestinationRootRaw $DestinationRoot -ShareUser ($settings.ShareUser) -SharePassword $settings.SharePassword -ConsoleOpticalDisplaySetHashSetObj $consoleOpticalSet -AllConsolesMerged $allConsoles
+                if ($null -eq $wizSsMn) {
+                    Write-Info 'Restarting script to return to the main menu...'
+                    Invoke-GamePopulatorScriptRestart
+                    exit $LASTEXITCODE
+                }
+                Invoke-GpApplySingleSystemWizardResult -WizSs $wizSsMn
+                $menuValid = $true
+                break
+            }
+            { $_ -match '^(?i)h$' } {
+                Show-Help -NoExit
+                Write-Host ""
+                Write-Host "Press " -NoNewline -ForegroundColor White
+                Write-Host "[Enter]" -NoNewline -ForegroundColor Green
+                Write-Host " to restart the script and return to the main menu." -ForegroundColor White
+                Invoke-OutputFlush
+                try {
+                    do {
+                        $k = [Console]::ReadKey($true)
+                    } while ($k.Key -ne [ConsoleKey]::Enter)
+                }
+                catch {
+                    $null = Read-Host "Press Enter to restart"
+                }
+                Write-Host ""
+                Invoke-GamePopulatorScriptRestart
+            }
+            '14' {
+                $crxMn = Read-CustomRunConfigurationWithConnectivityRetries
+                if ($null -eq $crxMn) {
+                    Write-Info 'Restarting script to return to the main menu...'
+                    Invoke-GamePopulatorScriptRestart
+                    exit $LASTEXITCODE
+                }
+                Invoke-GpApplyCustomRunInteractiveResult -Crx $crxMn
+                $menuValid = $true
+                break
+            }
+            default {
+                Write-Warn "Invalid selection. Enter 1-14, H for help, E to exit, or press Enter to exit."
             }
         }
     }
@@ -1686,57 +650,158 @@ if ($script:CustomRunActive) {
 
 if ($doRecreateConfig) {
     $missingTemplates = @()
-    if (Read-YesNoDefaultNo "`nRecreate settings file (settings.json) from template?") {
+    if (Read-YesNoDefaultNo "`nRecreate settings file (libraries\settings.json) from template?") {
         if (Test-Path -LiteralPath $settingsTemplatePath) {
+            Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $settingsPath
             Copy-Item -LiteralPath $settingsTemplatePath -Destination $settingsPath -Force
-            Write-Info "Recreated: settings.json"
-        } else {
+            Write-Info 'Recreated: libraries\settings.json'
+        }
+        else {
             $missingTemplates += 'settings.template.json'
         }
     }
-    if (Read-YesNoDefaultNo "Recreate console sources file (sources.psd1) from template?") {
+    if (Read-YesNoDefaultNo "Recreate libraries\console-sources.psd1 from template?") {
         if (Test-Path -LiteralPath $consoleTemplatePath) {
+            Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $consolePath
             Copy-Item -LiteralPath $consoleTemplatePath -Destination $consolePath -Force
-            Write-Info "Recreated: sources.psd1"
-        } else {
-            $missingTemplates += 'sources.template.psd1'
+            Write-Info 'Recreated: libraries\console-sources.psd1'
+        }
+        else {
+            $missingTemplates += 'console-sources.template.psd1'
         }
     }
-    if (Read-YesNoDefaultNo "Recreate console names file (console-names.json) from template?") {
+    if (Read-YesNoDefaultNo "Recreate libraries\hacks-sources.psd1 from template?") {
+        if (Test-Path -LiteralPath $hacksSourcesTemplatePath) {
+            Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $hacksSourcesPath
+            Copy-Item -LiteralPath $hacksSourcesTemplatePath -Destination $hacksSourcesPath -Force
+            Write-Info 'Recreated: libraries\hacks-sources.psd1'
+        }
+        else {
+            $missingTemplates += 'hacks-sources.template.psd1'
+        }
+    }
+    if (Read-YesNoDefaultNo "Recreate libraries\trans-sources.psd1 from template?") {
+        if (Test-Path -LiteralPath $transSourcesTemplatePath) {
+            Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $transSourcesPath
+            Copy-Item -LiteralPath $transSourcesTemplatePath -Destination $transSourcesPath -Force
+            Write-Info 'Recreated: libraries\trans-sources.psd1'
+        }
+        else {
+            $missingTemplates += 'trans-sources.template.psd1'
+        }
+    }
+    if (Read-YesNoDefaultNo "Recreate libraries\addons-sources.psd1 from template?") {
+        if (Test-Path -LiteralPath $addonsSourcesTemplatePath) {
+            Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $addonsSourcesPath
+            Copy-Item -LiteralPath $addonsSourcesTemplatePath -Destination $addonsSourcesPath -Force
+            Write-Info 'Recreated: libraries\addons-sources.psd1'
+        }
+        else {
+            $missingTemplates += 'addons-sources.template.psd1'
+        }
+    }
+    if (Read-YesNoDefaultNo "Recreate libraries\console-names.json from template?") {
         if (Test-Path -LiteralPath $consoleNamesTemplatePath) {
+            Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $consoleNamesPath
             Copy-Item -LiteralPath $consoleNamesTemplatePath -Destination $consoleNamesPath -Force
-            Write-Info "Recreated: console-names.json"
-        } else {
+            Write-Info 'Recreated: libraries\console-names.json'
+        }
+        else {
             $missingTemplates += 'console-names.template.json'
+        }
+    }
+    if (Read-YesNoDefaultNo "Recreate libraries\hacks-names.json from template?") {
+        if (Test-Path -LiteralPath $hacksNamesTemplatePath) {
+            Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $hacksNamesPath
+            Copy-Item -LiteralPath $hacksNamesTemplatePath -Destination $hacksNamesPath -Force
+            Write-Info 'Recreated: libraries\hacks-names.json'
+        }
+        else {
+            $missingTemplates += 'hacks-names.template.json'
+        }
+    }
+    if (Read-YesNoDefaultNo "Recreate libraries\trans-names.json from template?") {
+        if (Test-Path -LiteralPath $transNamesTemplatePath) {
+            Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $transNamesPath
+            Copy-Item -LiteralPath $transNamesTemplatePath -Destination $transNamesPath -Force
+            Write-Info 'Recreated: libraries\trans-names.json'
+        }
+        else {
+            $missingTemplates += 'trans-names.template.json'
+        }
+    }
+    if (Read-YesNoDefaultNo "Recreate libraries\addons-names.json from template?") {
+        if (Test-Path -LiteralPath $addonsNamesTemplatePath) {
+            Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $addonsNamesPath
+            Copy-Item -LiteralPath $addonsNamesTemplatePath -Destination $addonsNamesPath -Force
+            Write-Info 'Recreated: libraries\addons-names.json'
+        }
+        else {
+            $missingTemplates += 'addons-names.template.json'
         }
     }
     if ($missingTemplates.Count -gt 0) {
         Write-Host ""
         Write-Info "Rebuilding template files from GitHub source..."
-        if (-not (Restore-GamePopulatorTemplatesFromGitHub -ScriptRoot $scriptRoot -TemplateFileNames @($missingTemplates))) {
+        if (-not (Restore-GamePopulatorTemplatesFromGitHub -ScriptRoot $scriptRoot -LibrariesRoot $librariesRoot -TemplateFileNames @($missingTemplates))) {
             Write-Warn ("Could not restore templates from GitHub. Missing: {0}" -f ($missingTemplates -join ', '))
             exit 1
         }
         foreach ($fn in $missingTemplates) {
             if ($fn -eq 'settings.template.json') {
+                Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $settingsPath
                 Copy-Item -LiteralPath $settingsTemplatePath -Destination $settingsPath -Force
-                Write-Info "Recreated: settings.json"
-            } elseif ($fn -eq 'sources.template.psd1') {
+                Write-Info 'Recreated: libraries\settings.json'
+            }
+            elseif ($fn -eq 'console-sources.template.psd1') {
+                Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $consolePath
                 Copy-Item -LiteralPath $consoleTemplatePath -Destination $consolePath -Force
-                Write-Info "Recreated: sources.psd1"
-            } elseif ($fn -eq 'console-names.template.json') {
+                Write-Info 'Recreated: libraries\console-sources.psd1'
+            }
+            elseif ($fn -eq 'hacks-sources.template.psd1') {
+                Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $hacksSourcesPath
+                Copy-Item -LiteralPath $hacksSourcesTemplatePath -Destination $hacksSourcesPath -Force
+                Write-Info 'Recreated: libraries\hacks-sources.psd1'
+            }
+            elseif ($fn -eq 'trans-sources.template.psd1') {
+                Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $transSourcesPath
+                Copy-Item -LiteralPath $transSourcesTemplatePath -Destination $transSourcesPath -Force
+                Write-Info 'Recreated: libraries\trans-sources.psd1'
+            }
+            elseif ($fn -eq 'addons-sources.template.psd1') {
+                Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $addonsSourcesPath
+                Copy-Item -LiteralPath $addonsSourcesTemplatePath -Destination $addonsSourcesPath -Force
+                Write-Info 'Recreated: libraries\addons-sources.psd1'
+            }
+            elseif ($fn -eq 'console-names.template.json') {
+                Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $consoleNamesPath
                 Copy-Item -LiteralPath $consoleNamesTemplatePath -Destination $consoleNamesPath -Force
-                Write-Info "Recreated: console-names.json"
+                Write-Info 'Recreated: libraries\console-names.json'
+            }
+            elseif ($fn -eq 'hacks-names.template.json') {
+                Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $hacksNamesPath
+                Copy-Item -LiteralPath $hacksNamesTemplatePath -Destination $hacksNamesPath -Force
+                Write-Info 'Recreated: libraries\hacks-names.json'
+            }
+            elseif ($fn -eq 'trans-names.template.json') {
+                Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $transNamesPath
+                Copy-Item -LiteralPath $transNamesTemplatePath -Destination $transNamesPath -Force
+                Write-Info 'Recreated: libraries\trans-names.json'
+            }
+            elseif ($fn -eq 'addons-names.template.json') {
+                Backup-GamePopulatorLibraryFileIfPresent -LiteralPath $addonsNamesPath
+                Copy-Item -LiteralPath $addonsNamesTemplatePath -Destination $addonsNamesPath -Force
+                Write-Info 'Recreated: libraries\addons-names.json'
             }
         }
         Write-Host ""
         Write-Info "Restarting script to load recreated config."
-        & $script:EntryScriptPath @PSBoundParameters
+        Invoke-GamePopulatorScriptRestart
         exit $LASTEXITCODE
     }
     Write-Host ""
     Write-Info "Restarting script to reload configuration..."
-    & $script:EntryScriptPath @PSBoundParameters
+    Invoke-GamePopulatorScriptRestart
     exit $LASTEXITCODE
 }
 
@@ -1754,6 +819,36 @@ if ($script:CustomRunActive) {
     $destUserForInit = $script:CustomRunDestUser
     $destPassForInit = $script:CustomRunDestPassword
 }
+if ($null -eq $script:PostMenuDestinationInit) {
+    if (-not (Test-GamePopulatorResolvedShareFolderPrecheckOk -PathResolvedOrRaw $DestinationRoot)) {
+        Write-Host ''
+        Write-Host 'Destination folder is not reachable before SMB connection (same check as Validate configuration).' -ForegroundColor Red
+        Write-Host ('       {0}' -f (Format-PathForDisplay (Resolve-DestinationPath -Path (($DestinationRoot.ToString()).Trim())))) -ForegroundColor DarkYellow
+        if ($script:CustomRunActive) {
+            Write-Host '       For custom runs, verify the chosen destination path exists and reconnect network/SMB.' -ForegroundColor DarkGray
+        }
+        else {
+            Write-Host ("       Set DestinationRoot in {0} (main menu 2). UNC/SMB: try main menu 6." -f (Format-PathForDisplay $settingsPath)) -ForegroundColor DarkGray
+        }
+        Write-Host ''
+        Write-Host "Press " -NoNewline -ForegroundColor White
+        Write-Host "[Enter]" -NoNewline -ForegroundColor Green
+        Write-Host " to restart the script." -ForegroundColor White
+        Invoke-OutputFlush
+        try {
+            do {
+                $k = [Console]::ReadKey($true)
+            } while ($k.Key -ne [ConsoleKey]::Enter)
+        }
+        catch {
+            $null = Read-Host 'Press Enter to restart the script'
+        }
+        Write-Host ''
+        Write-Info 'Restarting script...'
+        Invoke-GamePopulatorScriptRestart
+        exit $LASTEXITCODE
+    }
+}
 Write-ScriptDiag "Before Initialize-DestinationRoot (UNC share mapping can hang if the server is unreachable)"
 Invoke-OutputFlush
 $uncCountdownJob = $null
@@ -1768,12 +863,14 @@ try {
         Write-ScriptDiag "Using destination PSDrive from menu option 6 (network reset)"
         $destInfo = $script:PostMenuDestinationInit
         $script:PostMenuDestinationInit = $null
-    } else {
+    }
+    else {
         $destInfo = Initialize-DestinationRoot -Path $DestinationRoot -User $destUserForInit -Password $destPassForInit
     }
     $DestinationRoot = $destInfo.Path
     $destDrive = $destInfo.Drive
-} catch {
+}
+catch {
     $msg = $_.Exception.Message
     $hint = Expand-SmbConnectErrorHint -RawMessage $msg -UncPath $DestinationRoot
     Write-Host "Failed to connect to destination: " -NoNewline -ForegroundColor Yellow
@@ -1784,7 +881,8 @@ try {
         Write-Host $hint -ForegroundColor DarkYellow
     }
     exit 1
-} finally {
+}
+finally {
     if ($uncCountdownJob) {
         Stop-GamePopulatorBackgroundStatusDisplay -Job $uncCountdownJob
     }
@@ -1794,12 +892,25 @@ if ($script:CustomRunActive -and $script:CustomRunDestDisplay) {
     $destinationPathDisplay = $script:CustomRunDestDisplay
 }
 
-$ConsoleSources = @($allConsoles)
-$ConsoleSourcesReachable = @($allConsoles)
+$ConsoleSources = @($allConsoles | Where-Object {
+        $_ `
+            -and (Test-GamePopulatorMergedSourceEntryEnabled $_) `
+            -and -not [string]::IsNullOrWhiteSpace($_.Name) `
+            -and -not [string]::IsNullOrWhiteSpace($_.SourcePath)
+    })
+if ($null -ne $script:GpPendingSingleConsoleForMigrate) {
+    $pendingPick = $script:GpPendingSingleConsoleForMigrate
+    $script:GpPendingSingleConsoleForMigrate = $null
+    $ConsoleSources = @([pscustomobject]@{
+            Name       = [string]$pendingPick.Name
+            SourcePath = [string]$pendingPick.SourcePath
+        })
+}
+$ConsoleSourcesReachable = @()
 
 if (-not $cleanupOnly) {
     if (-not $script:CustomRunActive) {
-        if (-not $ConsoleSources -or $ConsoleSources.Count -eq 0) {
+        if ((-not ($script:GpSingleSystemInteractiveSession)) -and (-not $ConsoleSources -or $ConsoleSources.Count -eq 0)) {
             Write-Host ""
             Write-Host "No consoles were configured. Run option 1 to setup consoles." -ForegroundColor Yellow
             Write-Host ""
@@ -1811,12 +922,13 @@ if (-not $cleanupOnly) {
                 do {
                     $k = [Console]::ReadKey($true)
                 } while ($k.Key -ne [ConsoleKey]::Enter)
-            } catch {
+            }
+            catch {
                 $null = Read-Host "Press Enter to restart the script"
             }
             Write-Host ""
             Write-Info "Restarting script..."
-            & $script:EntryScriptPath @PSBoundParameters
+            Invoke-GamePopulatorScriptRestart
             exit $LASTEXITCODE
         }
     }
@@ -1834,23 +946,75 @@ if (-not $cleanupOnly) {
         }
         $ConsoleSourcesReachable = @([pscustomobject]@{ Name = 'Custom run'; SourcePath = $script:CustomRunSourcePath })
         Write-Host ""
-    } else {
-        $reachableList = [System.Collections.Generic.List[object]]::new()
-        $unreachableList = [System.Collections.Generic.List[object]]::new()
-        Write-Host ""
-        Write-Host 'Verifying each console SourcePath is reachable (same credentials as copy pass)...' -ForegroundColor DarkGray
-        foreach ($src in $ConsoleSources) {
-            if ([string]::IsNullOrWhiteSpace($src.Name) -or [string]::IsNullOrWhiteSpace($src.SourcePath)) { continue }
-            $probe = Test-ConsoleSourcePath -Root $src.SourcePath -User $srcUser -Password $srcPass
-            if ($probe.OK) {
-                $reachableList.Add($src)
-            } else {
-                $unreachableList.Add(@{
-                    Name       = $src.Name
-                    SourcePath = $src.SourcePath
-                    Error      = $probe.Error
-                })
+    }
+    else {
+        $logsParentEarly = Join-Path $scriptRoot 'logs'
+        if (-not (Test-Path -LiteralPath $logsParentEarly -PathType Container)) {
+            New-Item -Path $logsParentEarly -ItemType Directory -Force | Out-Null
+        }
+        $gpVcGuardStartup = Join-Path $logsParentEarly 'gp-source-verification-cache.json'
+
+        $guardFingerprintStartup = Get-GpSourceVerificationGuardFingerprintSha256Hex `
+            -Sources @($ConsoleSources) `
+            -ShareUserRaw $settings.ShareUser `
+            -GamePopulatorSettingsLiteralPath $settingsPath
+
+        Write-Host ''
+
+        $skipRepeatedProbe = $false
+        if (-not $script:GpSingleSystemInteractiveSession) {
+            $skipRepeatedProbe = (Test-GpSourceVerificationGuardCacheHit -CacheLiteralPath $gpVcGuardStartup -ExpectedFingerprint $guardFingerprintStartup)
+        }
+        $reachableList = $null
+        $unreachableList = $null
+        $didDisableUnreachableDuringProbe = $false
+
+        if ($skipRepeatedProbe) {
+            Write-Host 'Using saved source connectivity verification (manual menu 4 or last migrate preflight succeeded with no failures; rerun after any enabled SourcePath or libraries\settings.json change).' -ForegroundColor DarkYellow
+            Write-Host ('       Cache: {0}' -f (Format-PathForDisplay $gpVcGuardStartup)) -ForegroundColor DarkGray
+            $reachableList = [System.Collections.Generic.List[object]]::new()
+            foreach ($x in @($ConsoleSources)) {
+                $reachableList.Add($x) | Out-Null
             }
+            $unreachableList = [System.Collections.Generic.List[hashtable]]::new()
+            $didDisableUnreachableDuringProbe = $false
+        }
+        else {
+            Write-Host 'Verifying each enabled console SourcePath (folder preflight, then SMB credentials as used for copying)...' -ForegroundColor DarkYellow
+            Invoke-OutputFlush
+
+            $probeStartup = Invoke-GpTestEnabledConsoleSharesReachability -Sources @($ConsoleSources) `
+                -ShareUserArg ($settings.ShareUser) `
+                -SharePasswordArg $settings.SharePassword
+
+            $reachableList = [System.Collections.Generic.List[object]](@($probeStartup.Reachable))
+            $unreachableList = New-Object System.Collections.Generic.List[hashtable]
+            foreach ($uh in @($probeStartup.Unreachable)) {
+                $unreachableList.Add($uh) | Out-Null
+            }
+            $didDisableUnreachableDuringProbe = [bool]$probeStartup.DidDisableUnreachableDuringProbe
+
+            if ((@($probeStartup.Unreachable).Count -eq 0) -and (-not $didDisableUnreachableDuringProbe) -and (-not $script:GpSingleSystemInteractiveSession)) {
+                $snapSeal = @( $script:allConsoles | Where-Object {
+                        $_ `
+                            -and (Test-GamePopulatorMergedSourceEntryEnabled $_) `
+                            -and -not [string]::IsNullOrWhiteSpace($_.Name) `
+                            -and -not [string]::IsNullOrWhiteSpace($_.SourcePath)
+                    })
+                $fingerSealRun = Get-GpSourceVerificationGuardFingerprintSha256Hex `
+                    -Sources $snapSeal `
+                    -ShareUserRaw $settings.ShareUser `
+                    -GamePopulatorSettingsLiteralPath $settingsPath
+                Save-GpSourceVerificationGuardCache -CacheLiteralPath $gpVcGuardStartup -FingerprintSha256Hex $fingerSealRun
+            }
+            else {
+                Remove-GpSourceVerificationGuardCacheSilently -CacheLiteralPath $gpVcGuardStartup
+            }
+        }
+
+        if ($didDisableUnreachableDuringProbe) {
+            Update-GamePopulatorConsoleSourcesState
+            Write-Host '  Commented-out (disabled) unreachable sources were written to libraries\*-sources.psd1; merged lists reloaded.' -ForegroundColor DarkGray
         }
         $ConsoleSourcesReachable = @($reachableList)
 
@@ -1864,7 +1028,7 @@ if (-not $cleanupOnly) {
         }
         if ($unreachableList.Count -gt 0) {
             Write-Host ""
-            Write-Host "These enabled console share paths could not be reached; they will be skipped:" -ForegroundColor Red
+            Write-Host 'Some enabled sources cannot be copied and were skipped. Folder unreachable entries are commented out (disabled). Credential/other SMB errors remain enabled:' -ForegroundColor Red
             foreach ($entry in $unreachableList) {
                 $pathDisp = Format-PathForDisplay ([string]$entry.SourcePath)
                 $errPart = if ($entry.Error) { (' — ' + [string]$entry.Error) } else { '' }
@@ -1877,8 +1041,8 @@ if (-not $cleanupOnly) {
 
 if ($doProcessing -and -not $script:CustomRunActive) {
     $sourcesWithSharePath = @($ConsoleSources | Where-Object {
-        -not [string]::IsNullOrWhiteSpace($_.Name) -and -not [string]::IsNullOrWhiteSpace($_.SourcePath)
-    })
+            -not [string]::IsNullOrWhiteSpace($_.Name) -and -not [string]::IsNullOrWhiteSpace($_.SourcePath)
+        })
     if ($sourcesWithSharePath.Count -gt 0 -and $ConsoleSourcesReachable.Count -eq 0) {
         Write-Host ""
         Write-Host "No source shares are reachable; nothing to migrate. Check network paths and credentials." -ForegroundColor Red
@@ -1891,17 +1055,184 @@ if ($doProcessing -and -not $script:CustomRunActive) {
             do {
                 $k = [Console]::ReadKey($true)
             } while ($k.Key -ne [ConsoleKey]::Enter)
-        } catch {
+        }
+        catch {
             $null = Read-Host "Press Enter to restart the script"
         }
         Write-Host ""
         Write-Info "Restarting script..."
-        & $script:EntryScriptPath @PSBoundParameters
+        Invoke-GamePopulatorScriptRestart
         exit $LASTEXITCODE
     }
 }
 
 $archiveExts = if ($settings.ArchiveExtensions) { @($settings.ArchiveExtensions) } else { @('.zip', '.7z', '.rar') }
+
+$logsDir = Join-Path $scriptRoot 'logs'
+if (-not (Test-Path -LiteralPath $logsDir -PathType Container)) {
+    New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
+}
+$checkpointPath = Join-Path $logsDir 'game-populator-checkpoint.json'
+
+$copyInvokedViaParameter = ([bool]$Org) -or ([bool]$NoOrg)
+$stdinRedirectedGlob = $false
+try { $stdinRedirectedGlob = [Console]::IsInputRedirected } catch { }
+
+$plannedFingerprintHexForRun = ''
+$destinationCanonicalForRun = ''
+$checkpointRunGuid = [guid]::NewGuid().ToString('N')
+$gpResumeBootstrapCompleted = @()
+$resumeSucceededGlob = $false
+$gpStructuredNdjsonLiteralPathForRun = ''
+
+$script:GamePopulatorStructuredNdjsonLiteralPath = $null
+$script:GpStructuredRunBasics = $null
+
+$onlyConsolesScratch = @(foreach ($xc in @($OnlyConsoles)) {
+        $t = ''
+        if ($null -ne $xc) {
+            try {
+                $t = ($xc.ToString()).Trim()
+            }
+            catch {
+                $t = ''
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($t)) {
+            ($t.Trim().ToLowerInvariant())
+        }
+    })
+$onlyConsolesFilterVals = @(($onlyConsolesScratch | Sort-Object -Unique))
+
+$runOrchestrationEligible = ($doProcessing -and (-not $cleanupOnly) -and (-not $script:CustomRunActive))
+
+if ($runOrchestrationEligible) {
+    if ($onlyConsolesFilterVals.Count -gt 0) {
+        $wantOnly = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($w in @($onlyConsolesFilterVals)) {
+            [void]$wantOnly.Add($w)
+        }
+        $ConsoleSourcesReachable = @($ConsoleSourcesReachable | Where-Object { $wantOnly.Contains(([string]$_.Name).Trim().ToLowerInvariant()) })
+        if ($ConsoleSourcesReachable.Count -eq 0) {
+            Write-Host ''
+            Write-Warn 'The OnlyConsoles filter did not match any reachable PSD1-enabled systems.'
+            Invoke-OutputFlush
+            try {
+                Read-Host 'Press Enter to restart the script'
+            }
+            catch { }
+            Invoke-GamePopulatorScriptRestart
+        }
+    }
+    elseif ((-not $copyInvokedViaParameter) -and (-not ($script:GpSingleSystemInteractiveSession))) {
+        $ConsoleSourcesReachable = @(Invoke-GpSelectReachableSubsetInteractive -ReachableSources $ConsoleSourcesReachable -DisplayNameMapForKeys $consoleDisplayNameMap)
+    }
+
+    $fpSingleConsoleKeySeg = ''
+    if ($script:GpSingleSystemInteractiveSession -and ($null -ne $ConsoleSourcesReachable) -and (@($ConsoleSourcesReachable).Count -gt 0)) {
+        try {
+            $fpSingleConsoleKeySeg = (([string]$ConsoleSourcesReachable[0].Name).Trim().ToLowerInvariant())
+        }
+        catch {
+            $fpSingleConsoleKeySeg = ''
+        }
+    }
+    $plannedFingerprintHexForRun = Get-GpRunPlanFingerprintSha256Hex `
+        -ReachableSources $ConsoleSourcesReachable `
+        -OrganizeRegions $organizeRegions `
+        -CopyInvokedViaParameter $copyInvokedViaParameter `
+        -AssetMode ([string]$script:GpMigrateAssetMode) `
+        -OptionalSingleConsoleKeyLower $fpSingleConsoleKeySeg
+    $destinationCanonicalForRun = Get-GpFingerprintPathNormalized -LiteralPathResolvedOrRaw $DestinationRoot
+
+    $resumeRequested = $false
+    if ($useRunCheckpointSetting -and $ConsoleSourcesReachable.Count -gt 0 -and (-not [string]::IsNullOrWhiteSpace($plannedFingerprintHexForRun))) {
+        if ([bool]$Resume) {
+            $resumeRequested = $true
+        }
+        elseif ((-not $copyInvokedViaParameter) -and (-not $stdinRedirectedGlob) -and (Test-Path -LiteralPath $checkpointPath -PathType Leaf)) {
+            if (Read-YesNoDefaultNo 'Checkpoint found — resume the last interrupted migrate run (remaining systems)?') {
+                $resumeRequested = $true
+            }
+            else {
+                Remove-GpRunCheckpointSilently -CheckpointLiteralPath $checkpointPath
+            }
+        }
+    }
+
+    if ($resumeRequested) {
+        if (-not (Test-Path -LiteralPath $checkpointPath -PathType Leaf)) {
+            if ([bool]$Resume) {
+                Write-Fail ('Non-interactive resume was requested but checkpoint was not found ({0}).' -f (Format-PathForDisplay $checkpointPath))
+            }
+        }
+        else {
+            $ckObj = Import-GpRunCheckpointObject -CheckpointLiteralPath $checkpointPath
+            if (-not (Test-GpCheckpointCompatibleWithResume -Ck $ckObj -PlannedFingerprintHex $plannedFingerprintHexForRun -DestinationCanonical $destinationCanonicalForRun -OrganizeRegions $organizeRegions -CopyInvokedViaParameter $copyInvokedViaParameter)) {
+                if ([bool]$Resume) {
+                    Write-Fail ('Checkpoint at {0} does not match the current migrate plan (resume failed). Adjust settings or delete this file.' -f (Format-PathForDisplay $checkpointPath))
+                }
+                Write-Warn 'Checkpoint mismatch for the current migrate plan — cleared.'
+                Remove-GpRunCheckpointSilently -CheckpointLiteralPath $checkpointPath
+            }
+            else {
+                $checkpointRunGuid = [string]$ckObj.runId
+                $completedFromCkListRaw = @()
+                if ($null -ne $ckObj.completedConsoleKeys) {
+                    $scratchCk = @(foreach ($q in @($ckObj.completedConsoleKeys)) {
+                            ([string]$q).Trim().ToLowerInvariant()
+                        })
+                    $completedFromCkListRaw = @( @($scratchCk) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } )
+                }
+                $completedSetCk = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+                foreach ($x in @($completedFromCkListRaw)) {
+                    [void]$completedSetCk.Add($x)
+                }
+                $gpResumeBootstrapCompleted = @(($completedSetCk.ToArray()) | Sort-Object)
+                $ConsoleSourcesReachable = @($ConsoleSourcesReachable | Where-Object { -not $completedSetCk.Contains(([string]$_.Name).Trim().ToLowerInvariant()) })
+                if ($ConsoleSourcesReachable.Count -eq 0) {
+                    Write-Host ''
+                    Write-Info 'Checkpoint reports every system was already copied for this migrate plan.'
+                    Remove-GpRunCheckpointSilently -CheckpointLiteralPath $checkpointPath | Out-Null
+                    Invoke-OutputFlush
+                    try {
+                        Read-Host 'Press Enter to restart the script'
+                    }
+                    catch { }
+                    Invoke-GamePopulatorScriptRestart
+                }
+                $resumeSucceededGlob = $true
+                Write-Info ('Resuming migrate run {0} ({1} system(s) pending).' -f $checkpointRunGuid, $ConsoleSourcesReachable.Count)
+            }
+        }
+    }
+
+    if ($structuredRunLog) {
+        $logTsGp = (Get-Date).ToString('yyyyMMdd-HHmmss')
+        $gpStructuredNdjsonLiteralPathForRun = Join-Path $logsDir ('run-{0}.ndjson' -f $logTsGp)
+        $script:GamePopulatorStructuredNdjsonLiteralPath = $gpStructuredNdjsonLiteralPathForRun
+        $script:GpStructuredRunBasics = [ordered]@{ runId = [string]$checkpointRunGuid; script = $script:ScriptName; scriptVersion = [string]$script:ScriptVersion }
+        Invoke-GpWriteStructuredNdjson -StructuredLogLiteralPath $gpStructuredNdjsonLiteralPathForRun -RunBasics $script:GpStructuredRunBasics -Evt 'run_start' -Data @{
+            destinationCanonical     = [string]$destinationCanonicalForRun
+            plannedFingerprintSha256 = [string]$plannedFingerprintHexForRun
+            organizeRegions          = [bool]$organizeRegions
+            resumed                  = [bool]$resumeSucceededGlob
+            copyInvokedViaParameter  = [bool]$copyInvokedViaParameter
+            reachableConsoleCount    = @(@($ConsoleSourcesReachable)).Count
+        }
+    }
+    else {
+        $gpStructuredNdjsonLiteralPathForRun = ''
+        $script:GamePopulatorStructuredNdjsonLiteralPath = $null
+        $script:GpStructuredRunBasics = $null
+    }
+}
+elseif (-not ($doProcessing -and $script:CustomRunActive)) {
+    # Copy pipeline not orchestrated (cleanup-only menu or migrate custom run paths); keep structured NDJSON off.
+    $script:GamePopulatorStructuredNdjsonLiteralPath = $null
+    $script:GpStructuredRunBasics = $null
+}
+
 $script:totalBytes = 0L
 $script:totalFiles = 0
 $script:consoleSummaries = New-Object System.Collections.Generic.List[object]
@@ -1911,22 +1242,30 @@ $script:organizeElapsed = [TimeSpan]::Zero
 $script:didOrganizeExisting = $false
 
 if ($doProcessing) {
+    $gpCheckpointAccumulator = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($bk in @($gpResumeBootstrapCompleted)) {
+        [void]$gpCheckpointAccumulator.Add(([string]$bk).Trim().ToLowerInvariant())
+    }
+
     $organizeTotalElapsed = [TimeSpan]::Zero
     $organizeTargets = @()
     if (-not $script:CustomRunActive) {
+        $organizePathSeen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
         foreach ($src in $ConsoleSourcesReachable) {
             if (-not $src.Name) { continue }
             $consoleKey = $src.Name.ToLowerInvariant()
             if (-not $consoleNameMap.ContainsKey($consoleKey)) { continue }
-            $base = Join-Path $DestinationRoot $consoleNameMap[$consoleKey]
-            if ($consoleSubDirMap.ContainsKey($consoleKey) -and $consoleSubDirMap[$consoleKey]) {
-                $base = Join-Path $base $consoleSubDirMap[$consoleKey]
-            }
+            $shortName = $consoleNameMap[$consoleKey]
+            $base = Get-DestinationPathForConsoleSource -DestinationRoot $DestinationRoot -ConsoleKey $consoleKey -ShortName $shortName
             if (Test-Path -LiteralPath $base -PathType Container) {
-                $organizeTargets += @(@{ Name = $src.Name; Path = $base })
+                $pk = [System.IO.Path]::GetFullPath($base).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar).ToLowerInvariant()
+                if ($organizePathSeen.Add($pk)) {
+                    $organizeTargets += @(@{ Name = $src.Name; Path = $base })
+                }
             }
         }
-    } elseif ($script:CustomRunOrganizeExisting) {
+    }
+    elseif ($script:CustomRunOrganizeExisting) {
         if (Test-Path -LiteralPath $DestinationRoot -PathType Container) {
             $organizeTargets = @(@{ Name = 'Custom run'; Path = $DestinationRoot })
         }
@@ -1936,25 +1275,44 @@ if ($doProcessing) {
     if ($organizeTotal -gt 0) {
         if ($script:CustomRunActive) {
             Write-Host 'Organizing files already on destination (custom run folder; can take a while on large folders)...' -ForegroundColor DarkGray
-        } else {
+        }
+        else {
             Write-Host 'Organizing files already on destination (layout / region rules; can take a while on large folders)...' -ForegroundColor DarkGray
         }
         Invoke-OutputFlush
     }
     foreach ($target in $organizeTargets) {
+        Invoke-GpWriteStructuredNdjson -StructuredLogLiteralPath $gpStructuredNdjsonLiteralPathForRun -RunBasics $script:GpStructuredRunBasics -Evt 'organize_destination_start' -Data @{
+            console         = [string]$target.Name
+            folderDisplay   = (Format-PathForDisplay ([string]$target.Path))
+            organizeRegions = [bool]$organizeRegions
+        }
         $consoleOrganizeTimer = [System.Diagnostics.Stopwatch]::StartNew()
         $script:organizeLastTick = @{}
         Update-OrganizeProgress -ConsoleName $target.Name -Stopwatch $consoleOrganizeTimer
         if ($organizeRegions) {
             # BIN/CUE must always stay in per-game folders (Console/Region/GameName), never on region or console root.
             Move-RegionInFolder -FolderPath $target.Path -ProgressConsoleName $target.Name -ProgressStopwatch $consoleOrganizeTimer -AllowBinCue:$true
-        } else {
+        }
+        else {
             # When flattening (no region), BIN/CUE must always stay in per-game folders; never move them to console root.
             Convert-ConsoleFolder -FolderPath $target.Path -AllowBinCue:$true -ProgressConsoleName $target.Name -ProgressStopwatch $consoleOrganizeTimer
+        }
+        if ($maxFilesPerFolder -gt 0) {
+            Invoke-Everdrive256FolderChunking -RootPath $target.Path -MaxFiles $maxFilesPerFolder
+        }
+        $organizeKey = $target.Name.ToLowerInvariant()
+        if ($organizeKey -eq 'nintendo game boy' -or $organizeKey -eq 'nintendo game boy color') {
+            Remove-SgbEnhancedFilesUnderFolder -FolderPath $target.Path
         }
         $consoleOrganizeTimer.Stop()
         $organizeTotalElapsed = $organizeTotalElapsed.Add($consoleOrganizeTimer.Elapsed)
         Write-OrganizeProgressLine -ConsoleName $target.Name -Elapsed $consoleOrganizeTimer.Elapsed
+        Invoke-GpWriteStructuredNdjson -StructuredLogLiteralPath $gpStructuredNdjsonLiteralPathForRun -RunBasics $script:GpStructuredRunBasics -Evt 'organize_destination_done' -Data @{
+            console                    = [string]$target.Name
+            elapsedMillisecondsRounded = ([math]::Round($consoleOrganizeTimer.Elapsed.TotalMilliseconds))
+            organizeRegions            = [bool]$organizeRegions
+        }
         Write-Host ""
     }
     $script:organizeElapsed = $organizeTotalElapsed
@@ -1976,8 +1334,8 @@ if ($doProcessing) {
             Write-Host "Console short name missing for '" -NoNewline -ForegroundColor Yellow
             Write-Host $name -NoNewline -ForegroundColor White
             Write-Host "' in " -NoNewline -ForegroundColor Yellow
-            Write-Host "console-names.json" -ForegroundColor White
-            $script:errors.Add("Console short name missing for '$name' in console-names.json") | Out-Null
+            Write-Host 'libraries\*-names.json (console, hacks, trans, addons)' -ForegroundColor White
+            $script:errors.Add("Console short name missing for '$name' in merged names JSON (console-, hacks-, trans-, addons-names).") | Out-Null
             continue
         }
         $displayName = if ($consoleDisplayNameMap[$consoleKey]) { $consoleDisplayNameMap[$consoleKey] } else { $name }
@@ -1985,7 +1343,8 @@ if ($doProcessing) {
         $drivePath = $null
         try {
             $drivePath = New-ShareDrive -Root $sourceRoot -User $user -Password $pass
-        } catch {
+        }
+        catch {
             $rawErr = $_.Exception.Message
             $hint = Expand-SmbConnectErrorHint -RawMessage $rawErr -UncPath $sourceRoot
             $detail = $rawErr
@@ -1995,6 +1354,13 @@ if ($doProcessing) {
         }
 
         try {
+            Invoke-GpWriteStructuredNdjson -StructuredLogLiteralPath $gpStructuredNdjsonLiteralPathForRun -RunBasics $script:GpStructuredRunBasics -Evt 'console_share_connected' -Data @{
+                consoleKey         = [string]$consoleKey
+                displayName        = [string]$displayName
+                sourceRootDisplay  = Format-PathForDisplay (($sourceRoot.ToString()).Trim())
+                destinationDisplay = Format-PathForDisplay (($DestinationRoot.ToString()))
+            }
+
             if ($script:lastLineLength -gt 0) {
                 Write-Host ""
                 $script:lastLineLength = 0
@@ -2022,19 +1388,22 @@ if ($doProcessing) {
 
             $consoleDest = if ($script:CustomRunActive -and $consoleKey -eq 'custom run') {
                 $DestinationRoot
-            } else {
-                $joined = Join-Path $DestinationRoot $shortName
-                $subDir = $consoleSubDirMap[$consoleKey]
-                if ($subDir) {
-                    Join-Path $joined $subDir
-                } else {
-                    $joined
-                }
             }
+            else {
+                Get-DestinationPathForConsoleSource -DestinationRoot $DestinationRoot -ConsoleKey $consoleKey -ShortName $shortName
+            }
+
+            $isSgbConsole = (
+                $consoleKey -eq 'nintendo super game boy (gb original)' -or
+                $consoleKey -eq 'nintendo super game boy (gbc original)')
+            $isGbOrGbc = ($consoleKey -eq 'nintendo game boy' -or $consoleKey -eq 'nintendo game boy color')
 
             Write-Host "Preparing the destination console folder and building a filename index." -ForegroundColor DarkGray
             Invoke-OutputFlush
             Invoke-ExistingDestination -FolderPath $consoleDest -Organize $organizeRegions -ArchiveExtensions $archiveExts
+            if ($isGbOrGbc) {
+                Remove-SgbEnhancedFilesUnderFolder -FolderPath $consoleDest
+            }
             $destNameSet = Get-DestinationFileNameSet -FolderPath $consoleDest
             $destNameSet = if ($destNameSet) { Convert-NameSet -NameSet $destNameSet } else { New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase) }
 
@@ -2049,6 +1418,8 @@ if ($doProcessing) {
 
             $allowedExtSet = $consoleExtensionsMap[$consoleKey]
             if (-not $allowedExtSet) { $allowedExtSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase); $allowedExtSet.Add('.rom') | Out-Null }
+
+            $useZipDestForNonOptical = (($script:GpMigrateAssetMode -eq 'zipDest') -and -not ($consoleOpticalSet.Contains($displayName)))
 
             if ($consoleOpticalSet.Contains($displayName)) {
                 $chdFiles = @($fileItems | Where-Object { $_.Extension -ieq '.chd' })
@@ -2088,8 +1459,8 @@ if ($doProcessing) {
                         $createdConsoleDir = $true
                     }
                     $dirItems = @($fileItems | Where-Object {
-                        $_.FullName.StartsWith($dir.FullName, [System.StringComparison]::OrdinalIgnoreCase)
-                    })
+                            $_.FullName.StartsWith($dir.FullName, [System.StringComparison]::OrdinalIgnoreCase)
+                        })
                     if ($dirItems.Count -eq 0) { continue }
                     Write-ProgressLine -Action "Copying folder" -ItemName $dir.Name -Bytes 0 -Elapsed $script:currentConsoleStopwatch.Elapsed
                     $copyResult = Copy-ItemsNoOverwrite -Items $dirItems -SourceRoot $dir.FullName -DestRoot $destFolder
@@ -2115,14 +1486,16 @@ if ($doProcessing) {
                 if (-not $isArchive) {
                     try {
                         $isArchive = Test-ArchiveFile -Path $item.FullName
-                    } catch {
+                    }
+                    catch {
                         $isArchive = $false
                     }
                 }
                 if ($isArchive) {
                     $archiveLookup.Add($item.FullName) | Out-Null
                     $archiveItems += $item
-                } elseif ($allowedExtSet.Contains($ext)) {
+                }
+                elseif ($allowedExtSet.Contains($ext)) {
                     $otherItems += $item
                 }
             }
@@ -2134,6 +1507,13 @@ if ($doProcessing) {
                 try {
                     $ext = $item.Extension.ToLowerInvariant()
                     if (-not $ext.StartsWith('.')) { $ext = '.' + $ext }
+                    $isArchiveItem = $archiveLookup.Contains($item.FullName)
+                    if ($isSgbConsole -and -not $isArchiveItem -and $ext -ne '.chd') {
+                        if (-not (Test-IncludeSgbEnhancedForConsole -Name $item.Name -Extension $ext -ConsoleKeyLower $consoleKey)) { continue }
+                    }
+                    if ($isGbOrGbc -and -not $isArchiveItem -and $ext -ne '.chd') {
+                        if (Test-IsSgbEnhancedRomName -Name $item.Name) { continue }
+                    }
                     if ($ext -eq '.chd') {
                         if (-not $allowedExtSet.Contains('.chd')) { continue }
                         $chdRoot = Get-RegionDestRoot -BasePath $consoleDest -Name $item.Name -Organize $organizeRegions
@@ -2161,6 +1541,92 @@ if ($doProcessing) {
                     }
 
                     $isArchive = $archiveLookup.Contains($item.FullName)
+
+                    if ($useZipDestForNonOptical -and (-not $isArchive)) {
+                        if (-not (Test-Path -LiteralPath $consoleDest -PathType Container)) {
+                            New-Item -Path $consoleDest -ItemType Directory -Force | Out-Null
+                        }
+                        $flatRootLooseZ = Get-RegionDestRoot -BasePath $consoleDest -Name $item.Name -Organize $organizeRegions
+                        if (-not (Test-Path -LiteralPath $flatRootLooseZ)) {
+                            New-Item -Path $flatRootLooseZ -ItemType Directory -Force | Out-Null
+                        }
+                        $bundleZipName = (($item.BaseName) + '.zip')
+                        if ($destNameSet -and $destNameSet.Contains($bundleZipName)) { continue }
+                        $bundleZipPath = Join-Path $flatRootLooseZ $bundleZipName
+                        if (Test-Path -LiteralPath $bundleZipPath) { continue }
+                        Initialize-7z
+                        Invoke-Gp7zCompressSingleFileToNewZipMax -SourceFileLiteralPath $item.FullName -DestinationZipLiteralPath $bundleZipPath -ProgressName $bundleZipName
+                        $bundleLen = (Get-Item -LiteralPath $bundleZipPath).Length
+                        Write-ProgressLine -Action "Compressed to ZIP" -ItemName $bundleZipName -Bytes $bundleLen -Elapsed $script:currentConsoleStopwatch.Elapsed
+                        Add-NameToSet -Set ([ref]$destNameSet) -Name $bundleZipName
+                        $script:totalBytes += $bundleLen
+                        $script:totalFiles += 1
+                        $consoleBytes += $bundleLen
+                        $consoleFiles += 1
+                        Add-RegionCount -Counts $consoleRegionCounts -Name $bundleZipName -Organize $organizeRegions | Out-Null
+                        Add-RegionCount -Counts $script:regionTotals -Name $bundleZipName -Organize $organizeRegions | Out-Null
+                        continue
+                    }
+
+                    if ($useZipDestForNonOptical -and $isArchive -and ($ext -eq '.zip')) {
+                        if (-not (Test-Path -LiteralPath $consoleDest -PathType Container)) {
+                            New-Item -Path $consoleDest -ItemType Directory -Force | Out-Null
+                        }
+                        $flatRootSrcZip = Get-RegionDestRoot -BasePath $consoleDest -Name $item.Name -Organize $organizeRegions
+                        if (-not (Test-Path -LiteralPath $flatRootSrcZip)) {
+                            New-Item -Path $flatRootSrcZip -ItemType Directory -Force | Out-Null
+                        }
+                        if ($destNameSet -and $destNameSet.Contains($item.Name)) { continue }
+                        $copyZp = Copy-ItemsFlatNoOverwrite -Items @($item) -DestRoot $flatRootSrcZip
+                        if ($copyZp.Files -gt 0) {
+                            Write-ProgressLine -Action "Copying ZIP bundle" -ItemName $item.Name -Bytes $item.Length -Elapsed $script:currentConsoleStopwatch.Elapsed
+                            $script:totalBytes += $copyZp.Bytes
+                            $script:totalFiles += $copyZp.Files
+                            $consoleBytes += $copyZp.Bytes
+                            $consoleFiles += $copyZp.Files
+                            Add-NameToSet -Set ([ref]$destNameSet) -Name $item.Name
+                            Add-RegionCount -Counts $consoleRegionCounts -Name $item.Name -Organize $organizeRegions | Out-Null
+                            Add-RegionCount -Counts $script:regionTotals -Name $item.Name -Organize $organizeRegions | Out-Null
+                        }
+                        continue
+                    }
+
+                    if ($useZipDestForNonOptical -and $isArchive -and ($ext -ne '.zip')) {
+                        $outZipName = (($item.BaseName) + '.zip')
+                        if ($destNameSet -and $destNameSet.Contains($outZipName)) { continue }
+                        if (-not (Test-Path -LiteralPath $consoleDest -PathType Container)) {
+                            New-Item -Path $consoleDest -ItemType Directory -Force | Out-Null
+                        }
+                        $flatRootRepack = Get-RegionDestRoot -BasePath $consoleDest -Name $item.Name -Organize $organizeRegions
+                        if (-not (Test-Path -LiteralPath $flatRootRepack)) {
+                            New-Item -Path $flatRootRepack -ItemType Directory -Force | Out-Null
+                        }
+                        $outZipPath = Join-Path $flatRootRepack $outZipName
+                        if (Test-Path -LiteralPath $outZipPath) { continue }
+                        Initialize-7z
+                        $tempRepack = Join-Path $TempRoot ([Guid]::NewGuid().ToString('N'))
+                        New-Item -Path $tempRepack -ItemType Directory -Force | Out-Null
+                        try {
+                            Invoke-7z -Arguments @('x', '-y', '-bso1', '-bse1', '-bsp1', "-o$tempRepack", $item.FullName) -ProgressLabel "Extracting" -ProgressName $item.Name
+                            $outZipAbs = [System.IO.Path]::GetFullPath($outZipPath)
+                            Invoke-Gp7zCompressFlatWorkingDirToNewZipMax -WorkingLiteralDirectoryWithFiles $tempRepack -DestinationZipLiteralPath $outZipAbs -ProgressName $outZipName
+                            $outLen = (Get-Item -LiteralPath $outZipAbs).Length
+                            Write-ProgressLine -Action "Repacked to ZIP" -ItemName $outZipName -Bytes $outLen -Elapsed $script:currentConsoleStopwatch.Elapsed
+                            Add-NameToSet -Set ([ref]$destNameSet) -Name $outZipName
+                            $script:totalBytes += $outLen
+                            $script:totalFiles += 1
+                            $consoleBytes += $outLen
+                            $consoleFiles += 1
+                            Add-RegionCount -Counts $consoleRegionCounts -Name $outZipName -Organize $organizeRegions | Out-Null
+                            Add-RegionCount -Counts $script:regionTotals -Name $outZipName -Organize $organizeRegions | Out-Null
+                        }
+                        finally {
+                            if (Test-Path -LiteralPath $tempRepack) {
+                                Remove-Item -LiteralPath $tempRepack -Recurse -Force
+                            }
+                        }
+                        continue
+                    }
 
                     if ($isArchive) {
                         Initialize-7z
@@ -2197,6 +1663,8 @@ if ($doProcessing) {
                                 foreach ($extracted in $allExtractedFiles) {
                                     $extractedName = $extracted.Name
                                     if (-not $extractedName) { continue }
+                                    if ($isGbOrGbc -and (Test-IsSgbEnhancedRomName -Name $extractedName)) { continue }
+                                    if ($isSgbConsole -and -not (Test-IncludeSgbEnhancedForConsole -Name $extractedName -Extension $extracted.Extension -ConsoleKeyLower $consoleKey)) { continue }
                                     if ($nameSet -and $nameSet.Contains($extractedName)) { continue }
                                     $filteredItems += $extracted
                                 }
@@ -2217,7 +1685,8 @@ if ($doProcessing) {
                                     Add-RegionCount -Counts $consoleRegionCounts -Name $file.Name -Organize $organizeRegions | Out-Null
                                     Add-RegionCount -Counts $script:regionTotals -Name $file.Name -Organize $organizeRegions | Out-Null
                                 }
-                            } else {
+                            }
+                            else {
                                 $extractedSize = Get-DirectorySize -Path $tempExtract
                                 Write-ProgressLine -Action "Copying extracted" -ItemName $item.BaseName -Bytes $extractedSize -Elapsed $script:currentConsoleStopwatch.Elapsed
                                 $region = Get-RegionFromFiles -Files $extractedItems
@@ -2232,6 +1701,8 @@ if ($doProcessing) {
                                     if (-not $extracted -or $extracted.PSIsContainer) { continue }
                                     $extractedName = $extracted.Name
                                     if (-not $extractedName) { continue }
+                                    if ($isGbOrGbc -and (Test-IsSgbEnhancedRomName -Name $extractedName)) { continue }
+                                    if ($isSgbConsole -and -not (Test-IncludeSgbEnhancedForConsole -Name $extractedName -Extension $extracted.Extension -ConsoleKeyLower $consoleKey)) { continue }
                                     if ($nameSet -and $nameSet.Contains($extractedName)) { continue }
                                     $filteredItems += $extracted
                                 }
@@ -2248,7 +1719,8 @@ if ($doProcessing) {
                                     Add-RegionCount -Counts $script:regionTotals -Name $file.Name -Organize $organizeRegions | Out-Null
                                 }
                             }
-                        } finally {
+                        }
+                        finally {
                             if (Test-Path -LiteralPath $tempExtract) {
                                 Remove-Item -LiteralPath $tempExtract -Recurse -Force
                             }
@@ -2275,11 +1747,16 @@ if ($doProcessing) {
                         Add-RegionCount -Counts $consoleRegionCounts -Name $item.Name -Organize $organizeRegions | Out-Null
                         Add-RegionCount -Counts $script:regionTotals -Name $item.Name -Organize $organizeRegions | Out-Null
                     }
-                } catch {
+                }
+                catch {
                     $lineInfo = $_.InvocationInfo.ScriptLineNumber
                     $msg = Get-CopyErrorMessage -ExceptionMessage $_.Exception.Message
                     Add-Error ("{0}: {1} (line {2})" -f $item.Name, $msg, $lineInfo)
                 }
+            }
+
+            if ($maxFilesPerFolder -gt 0 -and -not ($script:CustomRunActive -and $consoleKey -eq 'custom run')) {
+                Invoke-Everdrive256FolderChunking -RootPath $consoleDest -MaxFiles $maxFilesPerFolder
             }
 
             if ($script:lastLineLength -gt 0) {
@@ -2288,19 +1765,44 @@ if ($doProcessing) {
             }
             if ($script:currentConsoleStopwatch) {
                 $script:currentConsoleStopwatch.Stop()
+                $elapsedMsRounded = ([math]::Round($script:currentConsoleStopwatch.Elapsed.TotalMilliseconds))
                 $script:consoleSummaries.Add(@{
-                    Name = $displayName
-                    Elapsed = $script:currentConsoleStopwatch.Elapsed
-                    Files = $consoleFiles
-                    Bytes = $consoleBytes
-                    Regions = $consoleRegionCounts
-                }) | Out-Null
+                        Name    = $displayName
+                        Elapsed = $script:currentConsoleStopwatch.Elapsed
+                        Files   = $consoleFiles
+                        Bytes   = $consoleBytes
+                        Regions = $consoleRegionCounts
+                    }) | Out-Null
+                Invoke-GpWriteStructuredNdjson -StructuredLogLiteralPath $gpStructuredNdjsonLiteralPathForRun -RunBasics $script:GpStructuredRunBasics -Evt 'console_copy_done' -Data @{
+                    consoleKey                 = [string]$consoleKey
+                    displayName                = [string]$displayName
+                    bytesCopied                = [long]$consoleBytes
+                    filesCopied                = [long]$consoleFiles
+                    elapsedMillisecondsRounded = [long]$elapsedMsRounded
+                    destinationFolderDisplay   = (Format-PathForDisplay (($consoleDest.ToString())))
+                }
+                if ($useRunCheckpointSetting -and $runOrchestrationEligible -and (-not [string]::IsNullOrWhiteSpace($plannedFingerprintHexForRun))) {
+                    [void]$gpCheckpointAccumulator.Add([string]$consoleKey)
+                    $completedArrCk = @(($gpCheckpointAccumulator.ToArray()) | Sort-Object)
+                    Save-GpRunCheckpointSilently -CheckpointLiteralPath $checkpointPath -State @{
+                        schemaVersion            = 1
+                        runId                    = [string]$checkpointRunGuid
+                        plannedFingerprintSha256 = [string]$plannedFingerprintHexForRun
+                        destinationCanonical     = [string]$destinationCanonicalForRun
+                        organizeRegions          = [bool]$organizeRegions
+                        copyInvokedViaParameter  = [bool]$copyInvokedViaParameter
+                        completedConsoleKeys     = @($completedArrCk)
+                    }
+                }
+
                 $script:currentConsoleStopwatch = $null
             }
             Write-Host ""
-        } catch {
+        }
+        catch {
             Add-Error ("Failed to read source {0}: {1}" -f $sourceRoot, $_.Exception.Message)
-        } finally {
+        }
+        finally {
             if ($script:currentConsoleStopwatch) {
                 $script:currentConsoleStopwatch.Stop()
                 $script:currentConsoleStopwatch = $null
@@ -2314,206 +1816,300 @@ if ($doProcessing) {
 
 $destCleanup = $destDrive
 $overallStopwatch.Stop()
+
+$runFinishedErrorCountNdjson = 0
+if ($null -ne $script:errors) {
+    try {
+        $runFinishedErrorCountNdjson = [int]$script:errors.Count
+    }
+    catch {
+        $runFinishedErrorCountNdjson = 0
+    }
+}
+$runFinishedConsoleSummariesCountNdjson = 0
+if ($null -ne $script:consoleSummaries) {
+    try {
+        $runFinishedConsoleSummariesCountNdjson = [int]$script:consoleSummaries.Count
+    }
+    catch {
+        $runFinishedConsoleSummariesCountNdjson = 0
+    }
+}
+
+Invoke-GpWriteStructuredNdjson -StructuredLogLiteralPath $gpStructuredNdjsonLiteralPathForRun -RunBasics $script:GpStructuredRunBasics -Evt 'run_finished' -Data @{
+    organizedExisting        = [bool]$script:didOrganizeExisting
+    totalFilesCopied         = [long]$script:totalFiles
+    totalBytesCopied         = [long]$script:totalBytes
+    totalElapsedMilliseconds = ([math]::Round($overallStopwatch.Elapsed.TotalMilliseconds))
+    errorCount               = $runFinishedErrorCountNdjson
+    consolesSummarizedCount  = $runFinishedConsoleSummariesCountNdjson
+}
+
+if ($useRunCheckpointSetting -and $runOrchestrationEligible -and (-not [string]::IsNullOrWhiteSpace($plannedFingerprintHexForRun)) -and ($script:errors.Count -eq 0)) {
+    Remove-GpRunCheckpointSilently -CheckpointLiteralPath $checkpointPath | Out-Null
+}
+
 $cleanupFilesRemoved = 0
 $cleanupFoldersRemoved = 0
+$cleanupSkippedDestinationUnreachable = $false
 # Destination check: remove any files not in the console's allowed extensions list (.rom and .zip always allowed).
+# Scans: each games\<ShortName>[\SubDir] from merged names JSON (including music players from addons-names), and loose files directly under games\ (union of all configured extensions).
 if ($doCleanup) {
     $cleanupStatusJob = $null
     if ($script:RestartAfterInteractiveCleanup) {
         $cleanupStatusJob = Start-CleanupActivityElapsedDisplay
     }
     try {
-        if ($script:CustomRunActive -and $consoleExtensionsMap.ContainsKey('custom run') -and $consoleExtensionsMap['custom run']) {
-            $customAllowed = @($consoleExtensionsMap['custom run'])
-            $fr = Remove-DestinationFilesNotMatchingExtensions -FolderPath $DestinationRoot -AllowedExtensions $customAllowed
-            $cleanupFilesRemoved += $fr.FilesRemoved
-        } elseif (-not $script:CustomRunActive) {
-            foreach ($entry in $consoleNames) {
-                if (-not $entry.ShortName) { continue }
-                $consoleDestPath = Join-Path $DestinationRoot $entry.ShortName
-                if ($entry.PSObject.Properties['SubDir'] -and $entry.SubDir) {
-                    $consoleDestPath = Join-Path $consoleDestPath $entry.SubDir
-                }
-                if (-not (Test-Path -LiteralPath $consoleDestPath -PathType Container)) { continue }
-                $extList = @()
-                if ($entry.PSObject.Properties['Extensions'] -and $null -ne $entry.Extensions) {
-                    $extList = @($entry.Extensions)
-                }
-                if ($extList.Count -eq 0) {
-                    Write-Warn "Console '$($entry.ShortName)' has no Extensions in console-names.json; skipping cleanup for that folder (no files removed)."
-                    continue
-                }
-                $fr = Remove-DestinationFilesNotMatchingExtensions -FolderPath $consoleDestPath -AllowedExtensions $extList
+        if (-not (Test-GamePopulatorCleanupDestinationAccessible -DestinationRoot $DestinationRoot)) {
+            $cleanupSkippedDestinationUnreachable = $true
+            Write-Info " "
+            Write-Warn "Cleanup was not run. The destination is not available."
+            Write-Warn "The drive letter isn't mounted or the network share is offline."
+            Write-Warn "Connect the destination and try again."
+        }
+        else {
+            Write-Info " "
+            Write-Host '[i] Cleanup keeps only allowed extensions per system folder; files loose not in system folders are always removed.' -ForegroundColor DarkYellow
+            if ($script:CustomRunActive -and $consoleExtensionsMap.ContainsKey('custom run') -and $consoleExtensionsMap['custom run']) {
+                $customAllowed = @($consoleExtensionsMap['custom run'])
+                $fr = Remove-DestinationFilesNotMatchingExtensions -FolderPath $DestinationRoot -AllowedExtensions $customAllowed
                 $cleanupFilesRemoved += $fr.FilesRemoved
             }
+            elseif (-not $script:CustomRunActive) {
+                foreach ($entry in $consoleNames) {
+                    if (-not $entry.ShortName) { continue }
+                    $consoleDestPath = Join-Path $DestinationRoot $entry.ShortName
+                    if ($entry.PSObject.Properties['SubDir'] -and $entry.SubDir) {
+                        $consoleDestPath = Join-Path $consoleDestPath $entry.SubDir
+                    }
+                    if (-not (Test-Path -LiteralPath $consoleDestPath -PathType Container)) { continue }
+                    $extList = @()
+                    if ($entry.PSObject.Properties['Extensions'] -and $null -ne $entry.Extensions) {
+                        $extList = @($entry.Extensions)
+                    }
+                    if ($extList.Count -eq 0) {
+                        Write-Warn "Console '$($entry.ShortName)' has no Extensions in merged names JSON; skipping cleanup for that folder (no files removed)."
+                        continue
+                    }
+                    $fr = Remove-DestinationFilesNotMatchingExtensions -FolderPath $consoleDestPath -AllowedExtensions $extList
+                    $cleanupFilesRemoved += $fr.FilesRemoved
+                }
+                $frGamesRootStray = Remove-DestinationFilesNotMatchingExtensions -FolderPath $DestinationRoot -TopLevelOnly -DeleteAllFiles
+                $cleanupFilesRemoved += $frGamesRootStray.FilesRemoved
+            }
+            $er = Remove-EmptyFolders -RootPath $DestinationRoot
+            $cleanupFoldersRemoved = $er.FoldersRemoved
         }
-        $er = Remove-EmptyFolders -RootPath $DestinationRoot
-        $cleanupFoldersRemoved = $er.FoldersRemoved
-    } finally {
+    }
+    finally {
         if ($cleanupStatusJob) {
             Stop-GamePopulatorBackgroundStatusDisplay -Job $cleanupStatusJob
         }
     }
 }
-$logsDir = Join-Path $scriptRoot 'logs'
-if (-not (Test-Path -LiteralPath $logsDir -PathType Container)) {
-    New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
-}
-$runSummaryLogLines = [System.Collections.Generic.List[string]]::new()
-$runSummaryLogLines.Add("Game Populator run summary — $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
-$runSummaryLogLines.Add('')
 
-$runSummaryLogLines.Add('===[ Completion Summary ]===')
-Write-Summary "===[ Completion Summary ]==="
-$runSummaryLogLines.Add(("     Destination path:    {0}" -f $destinationPathDisplay))
-Write-Host "     Destination path:    " -NoNewline -ForegroundColor DarkCyan
-Write-Host $destinationPathDisplay -ForegroundColor White
-$elapsedTotal = Format-Elapsed $overallStopwatch.Elapsed
-$runSummaryLogLines.Add(("     Total time:          {0}" -f $elapsedTotal))
-Write-Host "     Total time:          " -NoNewline -ForegroundColor DarkCyan
-Write-Host $elapsedTotal -ForegroundColor White
-if ($doCleanup) {
-    $runSummaryLogLines.Add(("     Files removed:       {0}" -f $cleanupFilesRemoved.ToString('N0')))
-    $runSummaryLogLines.Add(("     Empty folders:       {0}" -f $cleanupFoldersRemoved.ToString('N0')))
-    Write-Host "     Files removed:       " -NoNewline -ForegroundColor DarkCyan
-    Write-Host ($cleanupFilesRemoved.ToString('N0')) -ForegroundColor White
-    Write-Host "     Empty folders:       " -NoNewline -ForegroundColor DarkCyan
-    Write-Host ($cleanupFoldersRemoved.ToString('N0')) -ForegroundColor White
-}
-if (-not $cleanupOnly) {
-    if ($script:didOrganizeExisting) {
-        $orgEl = Format-Elapsed $script:organizeElapsed
-        $runSummaryLogLines.Add(("     Organize time:       {0}" -f $orgEl))
-        Write-Host "     Organize time:       " -NoNewline -ForegroundColor DarkCyan
-        Write-Host $orgEl -ForegroundColor White
+$suppressCleanupUnreachableRunSummary = ($cleanupOnly -and $cleanupSkippedDestinationUnreachable)
+
+if (-not $suppressCleanupUnreachableRunSummary) {
+
+    $logsDir = Join-Path $scriptRoot 'logs'
+    if (-not (Test-Path -LiteralPath $logsDir -PathType Container)) {
+        New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
     }
-    $runSummaryLogLines.Add(("     Files copied:        {0}" -f $script:totalFiles.ToString('N0')))
-    $runSummaryLogLines.Add(("     Total size copied:   {0}" -f (Format-Size $script:totalBytes)))
-    Write-Host "     Files copied:        " -NoNewline -ForegroundColor DarkCyan
-    Write-Host ($script:totalFiles.ToString('N0')) -ForegroundColor White
-    Write-Host "     Total size copied:   " -NoNewline -ForegroundColor DarkCyan
-    Write-Host (Format-Size $script:totalBytes) -ForegroundColor White
-    if ($script:errors.Count -gt 0) {
-        $timestamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
-        $logFileName = "errorlog-$timestamp.log"
-        $logPath = Join-Path $logsDir $logFileName
-        $logStamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-        $header = "[$logStamp] $($script:errors.Count) error(s) occurred."
-        $content = @($header) + $script:errors
-        try {
-            $content | Set-Content -Path $logPath -Encoding UTF8
-            $runSummaryLogLines.Add(("     Errors:              {0} (log: {1})" -f $script:errors.Count.ToString('N0'), $logFileName))
-            Write-Host "     An error log was written with " -NoNewline -ForegroundColor DarkYellow
-            Write-Host ($script:errors.Count.ToString('N0')) -NoNewline -ForegroundColor DarkYellow
-            Write-Host " error(s): " -NoNewline -ForegroundColor DarkYellow
-            Write-Host $logFileName -ForegroundColor Red
-        } catch {
-            Write-Host "Failed to write error log: " -NoNewline -ForegroundColor Yellow
-            Write-Host ([System.IO.Path]::GetFileName($logPath)) -ForegroundColor White
-            $runSummaryLogLines.Add(("     Errors:              {0} (log write failed)" -f $script:errors.Count.ToString('N0')))
-            Write-Host "     Errors:              " -NoNewline -ForegroundColor Red
-            Write-Host ($script:errors.Count.ToString('N0')) -NoNewline -ForegroundColor Red
-            Write-Host " (log write failed)" -ForegroundColor Red
+    $runSummaryLogLines = [System.Collections.Generic.List[string]]::new()
+    $runSummaryLogLines.Add("Game Populator run summary — $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+    $runSummaryLogLines.Add('')
+
+    $runSummaryLogLines.Add('===[ Completion Summary ]===')
+    Write-Summary "===[ Completion Summary ]==="
+    $runSummaryLogLines.Add(("     Destination path:    {0}" -f $destinationPathDisplay))
+    Write-Host "     Destination path:    " -NoNewline -ForegroundColor DarkCyan
+    Write-Host $destinationPathDisplay -ForegroundColor White
+    $elapsedTotal = Format-Elapsed $overallStopwatch.Elapsed
+    $runSummaryLogLines.Add(("     Total time:          {0}" -f $elapsedTotal))
+    Write-Host "     Total time:          " -NoNewline -ForegroundColor DarkCyan
+    Write-Host $elapsedTotal -ForegroundColor White
+    if ($doCleanup) {
+        if ($cleanupSkippedDestinationUnreachable) {
+            $runSummaryLogLines.Add('     Cleanup:             skipped (destination not available)')
+            Write-Host "     Cleanup:             " -NoNewline -ForegroundColor DarkCyan
+            Write-Host "skipped (destination not available)" -ForegroundColor DarkYellow
+        }
+        else {
+            $runSummaryLogLines.Add(("     Files removed:       {0}" -f $cleanupFilesRemoved.ToString('N0')))
+            $runSummaryLogLines.Add(("     Empty folders:       {0}" -f $cleanupFoldersRemoved.ToString('N0')))
+            Write-Host "     Files removed:       " -NoNewline -ForegroundColor DarkCyan
+            Write-Host ($cleanupFilesRemoved.ToString('N0')) -ForegroundColor White
+            Write-Host "     Empty folders:       " -NoNewline -ForegroundColor DarkCyan
+            Write-Host ($cleanupFoldersRemoved.ToString('N0')) -ForegroundColor White
         }
     }
-}
-$runSummaryLogLines.Add('')
-Write-Host ""
-
-if ($script:consoleSummaries.Count -gt 0) {
-    $runSummaryLogLines.Add('===[ Console Summary ]===')
-    Write-Host "===[ Console Summary ]===" -ForegroundColor DarkCyan
-    foreach ($summary in $script:consoleSummaries) {
-        $csLine = "{0} completed in {1} copying {2} files using {3}." -f $summary.Name, (Format-Elapsed $summary.Elapsed), $summary.Files.ToString('N0'), (Format-Size $summary.Bytes)
-        $runSummaryLogLines.Add($csLine)
-        Write-Host ("{0} " -f $summary.Name) -NoNewline -ForegroundColor White
-        Write-Host ("completed in {0} copying " -f (Format-Elapsed $summary.Elapsed)) -NoNewline -ForegroundColor White
-        Write-Host ($summary.Files.ToString('N0')) -NoNewline -ForegroundColor DarkCyan
-        Write-Host " files using " -NoNewline -ForegroundColor White
-        Write-Host (Format-Size $summary.Bytes) -NoNewline -ForegroundColor DarkCyan
-        Write-Host "." -ForegroundColor White
+    if (-not $cleanupOnly) {
+        if ($script:didOrganizeExisting) {
+            $orgEl = Format-Elapsed $script:organizeElapsed
+            $runSummaryLogLines.Add(("     Organize time:       {0}" -f $orgEl))
+            Write-Host "     Organize time:       " -NoNewline -ForegroundColor DarkCyan
+            Write-Host $orgEl -ForegroundColor White
+        }
+        $runSummaryLogLines.Add(("     Files copied:        {0}" -f $script:totalFiles.ToString('N0')))
+        $runSummaryLogLines.Add(("     Total size copied:   {0}" -f (Format-Size $script:totalBytes)))
+        Write-Host "     Files copied:        " -NoNewline -ForegroundColor DarkCyan
+        Write-Host ($script:totalFiles.ToString('N0')) -ForegroundColor White
+        Write-Host "     Total size copied:   " -NoNewline -ForegroundColor DarkCyan
+        Write-Host (Format-Size $script:totalBytes) -ForegroundColor White
+        if ($script:errors.Count -gt 0) {
+            $timestamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
+            $logFileName = "errorlog-$timestamp.log"
+            $logPath = Join-Path $logsDir $logFileName
+            $logStamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+            $header = "[$logStamp] $($script:errors.Count) error(s) occurred."
+            $content = @($header) + $script:errors
+            try {
+                $content | Set-Content -Path $logPath -Encoding UTF8
+                $runSummaryLogLines.Add(("     Errors:              {0} (log: {1})" -f $script:errors.Count.ToString('N0'), $logFileName))
+                Write-Host "     An error log was written with " -NoNewline -ForegroundColor DarkYellow
+                Write-Host ($script:errors.Count.ToString('N0')) -NoNewline -ForegroundColor DarkYellow
+                Write-Host " error(s): " -NoNewline -ForegroundColor DarkYellow
+                Write-Host $logFileName -ForegroundColor Red
+            }
+            catch {
+                Write-Host "Failed to write error log: " -NoNewline -ForegroundColor Yellow
+                Write-Host ([System.IO.Path]::GetFileName($logPath)) -ForegroundColor White
+                $runSummaryLogLines.Add(("     Errors:              {0} (log write failed)" -f $script:errors.Count.ToString('N0')))
+                Write-Host "     Errors:              " -NoNewline -ForegroundColor Red
+                Write-Host ($script:errors.Count.ToString('N0')) -NoNewline -ForegroundColor Red
+                Write-Host " (log write failed)" -ForegroundColor Red
+            }
+        }
     }
     $runSummaryLogLines.Add('')
     Write-Host ""
-}
 
-if ($organizeRegions) {
-    $regionTotalsFromDest = @{}
-    $regionSummaryShown = $false
-    $regionUsCulture = [System.Globalization.CultureInfo]::GetCultureInfo('en-US')
-    $regionLineIndent = '    '
-    # Pad labels so counts align (same style as Region Totals).
-    $regionLabelColumn = 14
-    foreach ($entry in $consoleNames) {
-        if (-not $entry.ShortName) { continue }
-        $consoleDestPath = Join-Path $DestinationRoot $entry.ShortName
-        if ($entry.PSObject.Properties['SubDir'] -and $entry.SubDir) {
-            $consoleDestPath = Join-Path $consoleDestPath $entry.SubDir
-        }
-        $regionCounts = Get-RegionCountsFromDestination -FolderPath $consoleDestPath
-        if (-not $regionCounts -or $regionCounts.Count -eq 0) { continue }
-        if (-not $regionSummaryShown) {
-            $runSummaryLogLines.Add('===[ Region Summary ]===')
-            Write-Host "===[ Region Summary ]===" -ForegroundColor DarkCyan
-            $regionSummaryShown = $true
-        }
-        $displayName = if ($entry.Name) { $entry.Name } else { $entry.ShortName }
-        $runSummaryLogLines.Add([string]$displayName)
-        Write-Host $displayName -ForegroundColor White
-        foreach ($key in (Get-OrderedRegionKeys -Keys $regionCounts.Keys)) {
-            $regionLabel = ($key -replace '^\d+\s*-\s*', '')
-            $countText = $regionCounts[$key].ToString('N0', $regionUsCulture)
-            $rLine = $regionLineIndent + $regionLabel.PadRight($regionLabelColumn) + ' - ' + $countText
-            $runSummaryLogLines.Add($rLine)
-            Write-Host $rLine -ForegroundColor White
-            if (-not $regionTotalsFromDest.ContainsKey($key)) { $regionTotalsFromDest[$key] = 0 }
-            $regionTotalsFromDest[$key] += $regionCounts[$key]
+    if ($script:consoleSummaries.Count -gt 0) {
+        $runSummaryLogLines.Add('===[ Console Summary ]===')
+        Write-Host "===[ Console Summary ]===" -ForegroundColor DarkCyan
+        foreach ($summary in $script:consoleSummaries) {
+            $csLine = "{0} completed in {1} copying {2} files using {3}." -f $summary.Name, (Format-Elapsed $summary.Elapsed), $summary.Files.ToString('N0'), (Format-Size $summary.Bytes)
+            $runSummaryLogLines.Add($csLine)
+            Write-Host ("{0} " -f $summary.Name) -NoNewline -ForegroundColor White
+            Write-Host ("completed in {0} copying " -f (Format-Elapsed $summary.Elapsed)) -NoNewline -ForegroundColor White
+            Write-Host ($summary.Files.ToString('N0')) -NoNewline -ForegroundColor DarkCyan
+            Write-Host " files using " -NoNewline -ForegroundColor White
+            Write-Host (Format-Size $summary.Bytes) -NoNewline -ForegroundColor DarkCyan
+            Write-Host "." -ForegroundColor White
         }
         $runSummaryLogLines.Add('')
         Write-Host ""
     }
 
-    if ($regionTotalsFromDest.Count -gt 0) {
-        $runSummaryLogLines.Add('===[ Region Totals ]===')
-        Write-Host "===[ Region Totals ]===" -ForegroundColor DarkCyan
-        foreach ($key in (Get-OrderedRegionKeys -Keys $regionTotalsFromDest.Keys)) {
-            $regionLabel = ($key -replace '^\d+\s*-\s*', '')
-            $countText = $regionTotalsFromDest[$key].ToString('N0', $regionUsCulture)
-            $totLine = $regionLineIndent + $regionLabel.PadRight($regionLabelColumn) + ' - ' + $countText
-            $runSummaryLogLines.Add($totLine)
-            Write-Host $totLine -ForegroundColor White
+    if ($organizeRegions) {
+        $regionTotalsFromDest = @{}
+        $regionSummaryShown = $false
+        $regionUsCulture = [System.Globalization.CultureInfo]::GetCultureInfo('en-US')
+        $regionLineIndent = '    '
+        # Pad labels so counts align (same style as Region Totals).
+        $regionLabelColumn = 14
+        $regionSummaryPathSeen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($entry in $consoleNames) {
+            if (-not $entry.ShortName) { continue }
+            $consoleDestPath = Join-Path $DestinationRoot $entry.ShortName
+            if ($entry.PSObject.Properties['SubDir'] -and $entry.SubDir) {
+                $consoleDestPath = Join-Path $consoleDestPath $entry.SubDir
+            }
+            $pathKey = [System.IO.Path]::GetFullPath($consoleDestPath).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar).ToLowerInvariant()
+            if (-not $regionSummaryPathSeen.Add($pathKey)) { continue }
+            $regionCounts = Get-RegionCountsFromDestination -FolderPath $consoleDestPath
+            if (-not $regionCounts -or $regionCounts.Count -eq 0) { continue }
+            if (-not $regionSummaryShown) {
+                $runSummaryLogLines.Add('===[ Region Summary ]===')
+                Write-Host "===[ Region Summary ]===" -ForegroundColor DarkCyan
+                $regionSummaryShown = $true
+            }
+            $displayName = if ($entry.Name) { $entry.Name } else { $entry.ShortName }
+            $runSummaryLogLines.Add([string]$displayName)
+            Write-Host $displayName -ForegroundColor White
+            foreach ($key in (Get-OrderedRegionKeys -Keys $regionCounts.Keys)) {
+                $regionLabel = ($key -replace '^\d+\s*-\s*', '')
+                $countText = $regionCounts[$key].ToString('N0', $regionUsCulture)
+                $rLine = $regionLineIndent + $regionLabel.PadRight($regionLabelColumn) + ' - ' + $countText
+                $runSummaryLogLines.Add($rLine)
+                Write-Host $rLine -ForegroundColor White
+                if (-not $regionTotalsFromDest.ContainsKey($key)) { $regionTotalsFromDest[$key] = 0 }
+                $regionTotalsFromDest[$key] += $regionCounts[$key]
+            }
+            $runSummaryLogLines.Add('')
+            Write-Host ""
         }
-        $regionGrandTotal = [long]0
-        foreach ($gk in $regionTotalsFromDest.Keys) {
-            $regionGrandTotal += [long]$regionTotalsFromDest[$gk]
-        }
-        $grandLine = $regionLineIndent + 'Grand Total'.PadRight($regionLabelColumn) + ' - ' + $regionGrandTotal.ToString('N0', $regionUsCulture)
-        $runSummaryLogLines.Add('')
-        $runSummaryLogLines.Add($grandLine)
-        Write-Host ""
-        Write-Host $grandLine -ForegroundColor White
-    }
-}
 
-$gamerunFileName = ('gamerun-{0}.log' -f (Get-Date).ToString('yyyyMMdd-HHmmss'))
-$gamerunPath = Join-Path $logsDir $gamerunFileName
-try {
-    $runSummaryLogLines | Set-Content -LiteralPath $gamerunPath -Encoding UTF8
-    Write-Host ""
-    Write-Host "Run summary log: " -NoNewline -ForegroundColor DarkCyan
-    Write-Host $gamerunFileName -ForegroundColor White
-} catch {
-    Write-Warn ("Could not write run summary log: {0}" -f $_.Exception.Message)
-}
-Write-Host ""
+        if ($regionTotalsFromDest.Count -gt 0) {
+            $runSummaryLogLines.Add('===[ Region Totals ]===')
+            Write-Host "===[ Region Totals ]===" -ForegroundColor DarkCyan
+            foreach ($key in (Get-OrderedRegionKeys -Keys $regionTotalsFromDest.Keys)) {
+                $regionLabel = ($key -replace '^\d+\s*-\s*', '')
+                $countText = $regionTotalsFromDest[$key].ToString('N0', $regionUsCulture)
+                $totLine = $regionLineIndent + $regionLabel.PadRight($regionLabelColumn) + ' - ' + $countText
+                $runSummaryLogLines.Add($totLine)
+                Write-Host $totLine -ForegroundColor White
+            }
+            $regionGrandTotal = [long]0
+            foreach ($gk in $regionTotalsFromDest.Keys) {
+                $regionGrandTotal += [long]$regionTotalsFromDest[$gk]
+            }
+            $grandLine = $regionLineIndent + 'Grand Total'.PadRight($regionLabelColumn) + ' - ' + $regionGrandTotal.ToString('N0', $regionUsCulture)
+            $runSummaryLogLines.Add('')
+            $runSummaryLogLines.Add($grandLine)
+            Write-Host ""
+            Write-Host $grandLine -ForegroundColor White
+        }
+    }
+
+    $gamerunFileName = ('gamerun-{0}.log' -f (Get-Date).ToString('yyyyMMdd-HHmmss'))
+    $gamerunPath = Join-Path $logsDir $gamerunFileName
+    try {
+        $runSummaryLogLines | Set-Content -LiteralPath $gamerunPath -Encoding UTF8
+        Write-Host ""
+        Write-Host "Run summary log: " -NoNewline -ForegroundColor DarkCyan
+        Write-Host $gamerunFileName -ForegroundColor White
+        if (-not [string]::IsNullOrWhiteSpace($gpStructuredNdjsonLiteralPathForRun) -and (Test-Path -LiteralPath $gpStructuredNdjsonLiteralPathForRun -PathType Leaf)) {
+            Write-Host "Structured NDJSON: " -NoNewline -ForegroundColor DarkCyan
+            Write-Host ([System.IO.Path]::GetFileName($gpStructuredNdjsonLiteralPathForRun)) -ForegroundColor White
+        }
+    }
+    catch {
+        Write-Warn ("Could not write run summary log: {0}" -f $_.Exception.Message)
+    }
+
+} # end -not $suppressCleanupUnreachableRunSummary
 
 if ($destCleanup) {
     Remove-PSDrive -Name $destCleanup -ErrorAction SilentlyContinue
 }
 
+if ($script:GpPostMigrateInteractiveRepeatKind -eq 'SingleSystem' -or $script:GpPostMigrateInteractiveRepeatKind -eq 'CustomRun') {
+    Write-Host ""
+    $againMsg = if ($script:GpPostMigrateInteractiveRepeatKind -eq 'SingleSystem') {
+        'Run another single-system copy?'
+    }
+    else {
+        'Run another custom destination copy?'
+    }
+    if (Read-YesNoDefaultNo $againMsg) {
+        if ($script:GpPostMigrateInteractiveRepeatKind -eq 'SingleSystem') {
+            Invoke-GamePopulatorScriptRestart -Intent @{ SingleSystemInteractive = $true }
+        }
+        else {
+            Invoke-GamePopulatorScriptRestart -Intent @{ CustomRunInteractive = $true }
+        }
+    }
+    else {
+        Write-Info "Restarting script to return to the main menu..."
+        Invoke-GamePopulatorScriptRestart
+    }
+}
+
 if ($script:RestartAfterInteractiveCleanup) {
     Write-Host ""
-    Write-Host "Completed. Press " -NoNewline -ForegroundColor White
+    Write-Host "Press " -NoNewline -ForegroundColor White
     Write-Host "[Enter]" -NoNewline -ForegroundColor Green
     Write-Host " to return to the main menu." -ForegroundColor White
     Invoke-OutputFlush
@@ -2521,11 +2117,11 @@ if ($script:RestartAfterInteractiveCleanup) {
         do {
             $k = [Console]::ReadKey($true)
         } while ($k.Key -ne [ConsoleKey]::Enter)
-    } catch {
+    }
+    catch {
         $null = Read-Host "Press Enter to return to the main menu"
     }
     Write-Host ""
     Write-Info "Restarting script..."
-    & $script:EntryScriptPath @PSBoundParameters
-    exit $LASTEXITCODE
+    Invoke-GamePopulatorScriptRestart
 }
