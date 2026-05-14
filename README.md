@@ -1,5 +1,6 @@
 # Game Populator
-![7-Zip](https://img.shields.io/badge/7--Zip-Required-blue) ![PowerShell](https://img.shields.io/badge/PowerShell-7.6.1-blue) ![Windows](https://img.shields.io/badge/Windows-11-blue)
+![7-Zip](https://img.shields.io/badge/7--Zip-Required-blue) ![PowerShell](https://img.shields.io/badge/PowerShell-7.6.1-blue) ![Windows](https://img.shields.io/badge/Windows-11-blue) ![GitHub License](https://img.shields.io/github/license/cosmickatamari/game-populator)
+
 
 Game Populator is a PowerShell based utility for preparing and copying game libraries tailored to the MiSTer environment.
 
