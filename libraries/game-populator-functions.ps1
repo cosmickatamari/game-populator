@@ -267,6 +267,18 @@ if ($maxConcurrentFileCopies -lt 1) { $maxConcurrentFileCopies = 1 }
 if ($maxConcurrentFileCopies -gt 4) { $maxConcurrentFileCopies = 4 }
 $script:GamePopulatorMaxConcurrentFileCopies = $maxConcurrentFileCopies
 
+$maxFilesPerFolder = 256
+if ($settings.PSObject.Properties.Name -contains 'MaxFilesPerFolder' -and $null -ne $settings.MaxFilesPerFolder -and $settings.MaxFilesPerFolder -ne '') {
+    try {
+        $maxFilesPerFolder = [int]$settings.MaxFilesPerFolder
+    }
+    catch {
+        $maxFilesPerFolder = 256
+    }
+}
+if ($maxFilesPerFolder -lt 0) { $maxFilesPerFolder = 0 }
+$script:GamePopulatorMaxFilesPerFolder = $maxFilesPerFolder
+
 $structuredRunLog = $true
 if (($settings.PSObject.Properties.Name -contains 'StructuredRunLog') -and ($null -ne $settings.StructuredRunLog)) {
     try { $structuredRunLog = [bool]$settings.StructuredRunLog } catch {}
@@ -309,6 +321,21 @@ foreach ($entry in $consoleNames) {
         }
     }
     $consoleExtensionsMap[$key] = $extSet
+}
+$hacksOpticalPerArchiveGameFolderDisplaySet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+$hacksNamesLiteralForOpticalLayout = Join-Path $script:GamePopulatorLibrariesRoot 'hacks-names.json'
+if (Test-Path -LiteralPath $hacksNamesLiteralForOpticalLayout -PathType Leaf) {
+    try {
+        $hacksArrOpt = Get-Content -LiteralPath $hacksNamesLiteralForOpticalLayout -Raw -Encoding utf8 | ConvertFrom-Json
+        foreach ($he in @($hacksArrOpt)) {
+            if ($null -eq $he) { continue }
+            if (($he.Optical -eq 'yes') -and -not [string]::IsNullOrWhiteSpace($he.Name)) {
+                [void]$hacksOpticalPerArchiveGameFolderDisplaySet.Add([string]$he.Name)
+            }
+        }
+    }
+    catch {
+    }
 }
 function Get-Sha256HexOfUtf8Text {
     param([Parameter(Mandatory)][string]$Text)
@@ -615,69 +642,6 @@ function Invoke-GpWriteStructuredNdjson {
         }
         catch {}
     }
-}
-
-function Invoke-GpSelectReachableSubsetInteractive {
-    param(
-        [object[]]$ReachableSources,
-        [hashtable]$DisplayNameMapForKeys
-    )
-    $stdinRedirected = $false
-    try {
-        $stdinRedirected = [Console]::IsInputRedirected
-    }
-    catch {
-        $stdinRedirected = $false
-    }
-    if ($stdinRedirected) {
-        return @($ReachableSources)
-    }
-    $pairs = @(foreach ($s in @(ReachableSources)) {
-            if (-not $s -or [string]::IsNullOrWhiteSpace($s.Name)) { continue }
-            $ck = ([string]$s.Name).Trim().ToLowerInvariant()
-            $disp = ([string]$s.Name).Trim()
-            if ($DisplayNameMapForKeys -and $DisplayNameMapForKeys.ContainsKey($ck) -and ($null -ne $DisplayNameMapForKeys[$ck]) -and (-not [string]::IsNullOrWhiteSpace(([string]$DisplayNameMapForKeys[$ck]).Trim()))) {
-                $disp = ([string]$DisplayNameMapForKeys[$ck]).Trim()
-            }
-            [pscustomobject]@{ Item = $s; Disp = $disp; Sort = $disp.ToLowerInvariant(); KeyLower = $ck }
-        })
-    $sort = @(($pairs | Sort-Object Sort, KeyLower))
-    if ($sort.Count -le 1) {
-        return @($ReachableSources)
-    }
-    Write-Host ''
-    Write-Host 'Select which enabled systems to copy (limited run).' -ForegroundColor Cyan
-    for ($xi = 0; $xi -lt $sort.Count; $xi++) {
-        Write-Host ('  {0}. {1}' -f ($xi + 1), ($sort[$xi].Disp)) -ForegroundColor White
-    }
-    Write-Host '  Type ALL or comma-separated numbers (example: 2, 5).' -ForegroundColor DarkGray
-    $rawSel = Read-Host 'Systems to migrate'
-    if ($null -eq $rawSel) { $rawSel = '' }
-    $rawSel = ($rawSel.ToString()).Trim()
-    if ([string]::IsNullOrWhiteSpace($rawSel) -or $rawSel -match '^(?i)all$') {
-        return @($ReachableSources)
-    }
-    $toks = @($rawSel -split ',' | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    $pickedIndexes = New-Object System.Collections.Generic.HashSet[int]
-    foreach ($tok in @($toks)) {
-        if ($tok -notmatch '^\d+$') {
-            Write-Warn "Ignored token (expected a positive whole number): $tok"
-            continue
-        }
-        $v = [int]$tok
-        if ($v -lt 1 -or $v -gt $sort.Count) {
-            Write-Warn ('Number {0} is out of range (1-{1}).' -f $v, $sort.Count)
-            continue
-        }
-        [void]$pickedIndexes.Add($v - 1)
-    }
-    if ($pickedIndexes.Count -eq 0) {
-        Write-Warn 'No valid numbers were entered — including all reachable systems.'
-        return @($ReachableSources)
-    }
-    $idxSorted = @((($pickedIndexes.ToArray()) | Sort-Object))
-    $chosen = @(foreach ($ix in @($idxSorted)) { $sort[$ix].Item })
-    return @($chosen)
 }
 
 function Test-GpCheckpointCompatibleWithResume {
@@ -1536,12 +1500,15 @@ function Write-GamePopulatorEnabledSystemsStorageMeasurements {
                 $allowedExtSet.Add('.rom') | Out-Null
             }
             $dispForOptical = [string]$sys.Display
+            $szInnerListing = Resolve-GpSevenZipExePathWithFallbacks -Preferred $SevenZipResolved
             $stats = Measure-DirectoryFileCountAndBytes `
                 -LiteralDirectoryPath $resolved `
                 -SevenZipExeForUnpackedEstimate $(if ($UseUnpack) { $SevenZipResolved } else { '' }) `
                 -ArchiveExtensionsForUnpackedEstimate @($ArchiveExtensionsResolved) `
                 -AllowedExtensionsForEligibility $allowedExtSet `
-                -UseOpticalCopySemantics:($consoleOpticalSet.Contains($dispForOptical))
+                -UseOpticalCopySemantics:($consoleOpticalSet.Contains($dispForOptical)) `
+                -ConsoleKeyLowerForRomNamingRules $ck `
+                -SevenZipExeForSgbArchiveInnerListing $szInnerListing
             $fc = $stats.FileCount
             $tb = $stats.TotalBytes
         }
@@ -1634,7 +1601,7 @@ function Invoke-GamePopulatorGroupedEnabledSourcesStorageReport {
         @{ Title = 'Official consoles'; Path = $ConsoleSourcesLiteralPath }
         @{ Title = 'Game Hacks + Improvements'; Path = $HacksSourcesLiteralPath }
         @{ Title = 'Game Translations'; Path = $TransSourcesLiteralPath }
-        @{ Title = 'Add-ons (music players)'; Path = $AddonsSourcesLiteralPath }
+        @{ Title = 'Add-ons (music files)'; Path = $AddonsSourcesLiteralPath }
     )
 
     $reportSw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -2407,7 +2374,7 @@ function Invoke-GamePopulatorActiveSourceLocationsValidationReport {
     Write-Host '[i] Using Share credentials from libraries\settings.json (SMB probe matches migrate).' -ForegroundColor DarkYellow
     Invoke-OutputFlush
 
-    $probePack = Invoke-GpTestEnabledConsoleSharesReachability -Sources @($validatedForProbe.ToArray()) `
+    $probePack = Invoke-GpTestEnabledConsoleSharesReachability -Sources @($validatedForProbe) `
         -ShareUserArg ($settings.ShareUser) `
         -SharePasswordArg $settings.SharePassword
 
@@ -2426,7 +2393,7 @@ function Invoke-GamePopulatorActiveSourceLocationsValidationReport {
         [void]$reachableNameSet.Add((($rItem.Name).ToString()).Trim().ToLowerInvariant())
     }
 
-    foreach ($c in @($validatedForProbe.ToArray())) {
+    foreach ($c in @($validatedForProbe)) {
         $rk = (($c.Name).ToString()).Trim().ToLowerInvariant()
         $disp = if ($consoleDisplayNameMap.ContainsKey($rk) -and $consoleDisplayNameMap[$rk]) {
             [string]$consoleDisplayNameMap[$rk]

@@ -2,7 +2,7 @@
   {
     "ShortName": "MegaCD",
     "Name": "[T-En] Sega - CD",
-    "SubDir": "02 - [T-En] Sega - CD",
+    "SubDir": "30 - [T-En] Sega - CD",
     "Optical": "yes",
     "Extensions": [
       ".bin",
@@ -13,7 +13,7 @@
   {
     "ShortName": "MegaDrive",
     "Name": "[T-En] Sega - Genesis",
-    "SubDir": "02 - [T-En] Sega - Genesis",
+    "SubDir": "30 - [T-En] Sega - Genesis",
     "Extensions": [
       ".bin",
       ".gen",
@@ -24,7 +24,7 @@
   {
     "ShortName": "N64",
     "Name": "[T-En] Nintendo - Nintendo 64",
-    "SubDir": "02 - [T-En] Nintendo - Nintendo 64",
+    "SubDir": "30 - [T-En] Nintendo - Nintendo 64",
     "Extensions": [
       ".n64",
       ".v64",
@@ -34,7 +34,7 @@
   {
     "ShortName": "NES",
     "Name": "[T-En] Nintendo - Famicom",
-    "SubDir": "03 - [T-En] Nintendo - Famicom",
+    "SubDir": "30 - [T-En] Nintendo - Famicom",
     "Extensions": [
       ".nes"
     ]
@@ -42,7 +42,7 @@
   {
     "ShortName": "NES",
     "Name": "[T-En] Nintendo - Famicom Disk System",
-    "SubDir": "04 - [T-En] Nintendo - Famicom Disk System",
+    "SubDir": "31 - [T-En] Nintendo - Famicom Disk System",
     "Extensions": [
       ".fds"
     ]
@@ -50,7 +50,7 @@
   {
     "ShortName": "PSX",
     "Name": "[T-En] Sony - Playstation",
-    "SubDir": "02 - [T-En] Sony - Playstation",
+    "SubDir": "30 - [T-En] Sony - Playstation",
     "Optical": "yes",
     "Extensions": [
       ".bin",
@@ -64,7 +64,7 @@
   {
     "ShortName": "Saturn",
     "Name": "[T-En] Sega - Saturn",
-    "SubDir": "02 - [T-En] Sega - Saturn",
+    "SubDir": "30 - [T-En] Sega - Saturn",
     "Optical": "yes",
     "Extensions": [
       ".bin",
@@ -76,7 +76,7 @@
   {
     "ShortName": "SNES",
     "Name": "[T-En] Nintendo - Super Nintendo Entertainment System",
-    "SubDir": "03 - [T-En] Nintendo - Super Nintendo Entertainment System",
+    "SubDir": "30 - [T-En] Nintendo - Super Nintendo Entertainment System",
     "Extensions": [
       ".bin",
       ".smc",
@@ -86,7 +86,7 @@
   {
     "ShortName": "TGFX16",
     "Name": "[T-En] NEC - TurboGrafx-16",
-    "SubDir": "03 - [T-En] NEC - TurboGrafx-16",
+    "SubDir": "30 - [T-En] NEC - TurboGrafx-16",
     "Extensions": [
       ".bin",
       ".pce"
@@ -95,7 +95,7 @@
   {
     "ShortName": "TGFX16-CD",
     "Name": "[T-En] NEC - TurboGrafx-CD",
-    "SubDir": "02 - [T-En] NEC - TurboGrafx-CD",
+    "SubDir": "30 - [T-En] NEC - TurboGrafx-CD",
     "Optical": "yes",
     "Extensions": [
       ".bin",

@@ -1,40 +1,45 @@
-### Commited Changes
-
-**05/06/2026 (`game-populator.ps1`, `helpers.ps1`, plus local config)** — compared to the local GitHub checkout (same filenames: `game-populator.ps1`, `helpers.ps1`, `console-names.json`, `console-names.template.json`, `sources.template.psd1`, `settings.template.json`).
-
-1. **Shipped config parity** — In this comparison, **`console-names.json`**, **`console-names.template.json`**, **`sources.template.psd1`**, and **`settings.template.json`** are **byte-identical** between the GitHub tree and **`mister-nas-populate`**; no schema or catalog edits in those four files for this drop.
-2. **Local working config** — **`settings.json`** under **`mister-nas-populate`** is a **populated** runtime file (non-empty destination/temp paths and share fields) versus the **empty-placeholder** values in **`settings.template.json`** in the repo snapshot. **`sources.psd1`** in the working folder is a **live** data file (uncommented **`Sources`** entries with real share paths); it is **not** the same as the all-commented **`sources.template.psd1`**, by design. A file named **`sources - Copy.psd1`** in the working folder was **not** treated as part of the baseline diff (local backup/duplicate only).
-3. **Logging and summaries** — Runs now create a **`logs`** directory beside the script and write a timestamped **`gamerun-*.log`** containing the **completion summary**, **console summary**, and **region** blocks (including a **Grand Total** line for region counts). **Error logs** move from the **current working directory** into **`logs\errorlog-*.log`**, with adjusted on-screen wording. When cleanup runs, the script tallies **files removed** and **empty folders removed** and includes those counts in both the console summary and the gamerun log.
-4. **Live status on slow operations** — **`helpers.ps1`** adds **background thread jobs** that print a **rolling status line on stderr** while **connecting to a UNC destination** (30s “advisory limit” hint, then indicates Windows SMB may still be waiting) during **interactive cleanup-only** flows, and during **destination cleanup (scan/remove)**. **`Initialize-DestinationRoot`** messaging splits the “connecting…” line and prints the **UNC path in green** when not in **`-Quiet`** mode.
-5. **`helpers.ps1` behavior tweaks** — **`Invoke-GamePopulatorSelfUpdate`** now uses a clearer multi-line prompt and **`Read-YesNoDefaultNo`** for the final **“OK to proceed?”** step (default **no**). **`Format-Elapsed`** uses **“day” / “days”** for multi-day spans. **`Remove-DestinationFilesNotMatchingExtensions`** and **`Remove-EmptyFolders`** return **`pscustomobject`** tallies and use **try/catch** around **`Remove-Item`** instead of silent failure-only removal.
-6. **Interactive UX (main script)** — Banner lines use **dark green** instead of blue; **Settings** header and path highlights use **cyan / green**. **Turn on/off systems** and **path edit** prompts are **reworded** (including **`[Enter]`** phrasing and a short **comma-separated numbers** example). **`Show-MainMenu`** labels are tightened (“**Toggle visibility**…”, “**Edit network share mapping**”, “**file & folder cleanup**”, section headers **cyan**). **`Read-Host`** prompts for the numeric main menu and settings editor are **phrased differently**; invalid menu input no longer **repaints the entire menu** each time (menu shows once until a valid choice advances). **`-Cleanup`** from the command line sets **`RestartAfterInteractiveCleanup`** when **stdin is not redirected**, aligning behavior with menu-driven cleanup restarts.
-7. **Maintenance options 4–6** — **Recreate config from templates (option 4)** now defaults to **no** per file (**`Read-YesNoDefaultNo`**) instead of **yes**, reducing accidental overwrites. **GitHub install (option 5)** always **executes the self-update helper and then restarts**, even when the user **declines** the download (formerly a **decline** could leave you on the menu without restarting). **Reset SMB / reconnect destination (option 6)** asks **Proceed?** with default **no**; **`settings.json`** is called out in **green** in the explanatory text; after a successful run it can prompt with **`[Console]::ReadKey`** for **Enter** before restart (fallback to **`Read-Host`**).
-8. **End-of-run prompts** — When the script restarts after **interactive cleanup**, the **“press Enter”** wait prefers **`Console.ReadKey`** for **Enter** with a **`Read-Host`** fallback, with clearer **dark green `[Enter]`** labeling.
+### Release notes - 05/06/2026
 
 ---
 
-The sections below group the same changes for reviewers scanning by file.
+### Fixes and correctness
 
-## Entry script (`game-populator.ps1`)
+- **Error logs live with the script** - Errors go under **`logs\errorlog-*.log`** instead of whatever the **current working directory** happened to be, and the on-screen wording matches that layout.
+- **Cleanup results are real numbers** - Destination cleanup reports **files removed** and **empty folders removed**; those counts appear in both the **console wrap-up** and the **gamerun** log.
+- **Safer deletes** - **`Remove-DestinationFilesNotMatchingExtensions`** and **`Remove-EmptyFolders`** return simple **tally objects** and wrap **`Remove-Item`** in **try/catch** so failures surface instead of vanishing.
+- **Self-update confirmation** - The final **“OK to proceed?”** for **`Invoke-GamePopulatorSelfUpdate`** defaults to **no** and reads a little clearer across multiple lines.
 
-- **Rough size** — On the machines compared here, **`git diff --stat`** reported on the order of **~297 insertions / ~110 deletions** versus the GitHub copy; most churn is UX, logging, and cleanup counting rather than core copy loops.
-- **Completion path** — Builds **`logs`**, aggregates **`cleanupFilesRemoved` / `cleanupFoldersRemoved`**, writes **`gamerun-*.log`**, redirects **error logs** under **`logs\`**, extends **region totals** output with **Grand Total**, and adjusts error banner wording.
-- **UNC / cleanup UX** — Optional **stderr countdown** job while connecting to **`\\`** destinations in the **interactive cleanup-only** restart path (`Start-DestinationUncConnectionCountdownDisplay` / **`Stop-GamePopulatorBackgroundStatusDisplay`**).
+---
 
-## Helpers (`helpers.ps1`)
+### New features and UX
 
-- **`git diff --stat`** — On the order of **~81 insertions / ~8 deletions**, dominated by logging helpers, tally returns, **`Format-Elapsed`** pluralization, self-update prompting, **`Initialize-DestinationRoot`** formatting, and the **thread-job** status writers.
+- **Gamerun log beside the script** - Each run can write **`logs\gamerun-*.log`** with the **completion summary**, **console summary**, and **region** sections, including a **Grand Total** line for region counts when that block runs.
+- **Live status on slow work** - While **connecting to a UNC destination** (interactive cleanup-only restart path) and during **destination cleanup scan/remove**, a **background job** can print a **rolling status line on stderr** so a long SMB wait does not look frozen.
+	- There is a soft **30s** advisory before the message reflects that Windows may still be trying.
+- **Clearer UNC connect messaging** - **`Initialize-DestinationRoot`** separates the “connecting…” line from the path and, when not in **`-Quiet`**, prints the **UNC in green** so the eye lands on the server share.
+- **Elapsed time wording** - **`Format-Elapsed`** spells out **day / days** when a span crosses whole days.
+- **Menu look and feel**:
+	- Banner uses **dark green**
+	- settings headers and path callouts use **cyan / green**
+	- **Turn systems on/off** and **path edit** prompts are reworded (including **`[Enter]`** hints and a short **comma-separated numbers** example).
+	- Section headers lean **cyan**
+	- labels are tightened (**Toggle visibility…**, **Edit network share mapping**, **file & folder cleanup**)
+- **Less noisy invalid menu input** - A bad choice no longer **redraw the entire main menu** every time; the menu stays until you pick something valid.
+- **Command-line cleanup** - **`-Cleanup`** sets **restart-after-interactive-cleanup** when **stdin is not redirected**, matching the menu-driven cleanup restart story.
 
-## Shipped templates and console metadata
+---
 
-- **`settings.template.json`**, **`sources.template.psd1`**, **`console-names.template.json`**, **`console-names.json`** — No differences **between `C:\Users\Cosmic\Documents\GitHub\game-populator` and `D:\scripts\mister-nas-populate`** for these four files **in this comparison**.
+### Maintenance menu (options 4–6)
 
-## Local-only files (`settings.json`, `sources.psd1`)
+- **Recreate from templates (4)** - Defaults to **no** per file so a slip on **Enter** is less likely to wipe a good **`settings.json`** or share list.
+- **Install from GitHub (5)** - Always runs the self-update helper and **restarts the script** when you return from that flow—even if you **decline** the download—so you are not left on an odd half-updated menu state.
+- **Reset SMB / reconnect (6)**:
+	- **Proceed?** defaults to **no**
+	- **`settings.json`** is highlighted in **green** in the explanation. 
+	- After success it may wait on **Enter** via **`ReadKey`** with a **`Read-Host`** fallback.
 
-- **`settings.json`** — Expect differences from **`settings.template.json`** whenever you configure real **`DestinationRoot`**, **`TempRoot`**, or credentials; commit **templates**, not secrets, to GitHub.
-- **`sources.psd1`** — Maintained locally; uncomment and set **`SourcePath`** values per machine. **`sources.template.psd1`** remains the **commented skeleton** shipped with the repo.
+---
 
-## Notes for publishing
+### End-of-run and restart prompts
 
-If you intend to **`git push`** the **`D:\scripts\mister-nas-populate`** script changes onto **`game-populator`**, consider addressing **menu option 5** always restarting after a declined update (either restore conditional restart or document it as deliberate). Optionally bump **`$script:ScriptVersion`** / header **Updated** dates when distributing a labeled release.
-
+When the script restarts after **interactive cleanup**, the **“press Enter”** wait prefers **`Console.ReadKey`** for **Enter**, with **`Read-Host`** as fallback, and the **`[Enter]`** hint is styled in **dark green**.

@@ -1,7 +1,7 @@
 # Game Populator
-![7-Zip](https://img.shields.io/badge/7--Zip-required-blue) ![PowerShell](https://img.shields.io/badge/PowerShell-7.6.1-blue) ![Windows](https://img.shields.io/badge/Windows-11-blue)
+![7-Zip](https://img.shields.io/badge/7--Zip-Required-blue) ![PowerShell](https://img.shields.io/badge/PowerShell-7.6.1-blue) ![Windows](https://img.shields.io/badge/Windows-11-blue)
 
-Game Populator is a PowerShell utility for preparing and copying game libraries tailored to the MiSTer environment.
+Game Populator is a PowerShell based utility for preparing and copying game libraries tailored to the MiSTer environment.
 
 It supports:
 - Extract and copy sets for archive based collections.
@@ -13,13 +13,13 @@ It supports:
 ## Requirements
 
 - Windows with PowerShell 7.6.1.
-- [7-Zip](https://www.7-zip.org/) installed.
+- [7-Zip](https://www.7-zip.org/) 26.00 installed.
 - Read access to your source game folders (local and/or SMB).
 - Write access to destination and temp folders.
 
 ## Project Layout
 
-- `game-populator.ps1`: main prohect script, config checks, and top level runtime flow.
+- `game-populator.ps1`: main project script, config checks, and top level runtime flow.
 - `libraries/helpers.ps1`: shared utility layer. Logic for:
 	- logging
 	- detailed help
@@ -28,7 +28,7 @@ It supports:
 	- 7-Zip wrappers
 	- copy/cleanup logic
 	- region organization.
-- `libraries/game-populator-functions.ps1`: shared higher level app logic. Logic for: 
+- `libraries/game-populator-functions.ps1`: shared higher level app logic. Logic for:
 	- config/source merging
 	- interactive menus
 	- validation reports
@@ -42,7 +42,8 @@ It supports:
 1. Open PowerShell 7 and navigate to the extracted folder.
 2. Run: `.\game-populator.ps1`
 3. On first run, the script checks and bootstraps required config under `libraries\`.
-4. Use the interactive menu to configure sources/settings, validate connectivity, and run copy workflows.
+4. Additionally, the destination location will be checked for `games\` folder which will be created if not found.
+5. Use the interactive menu to configure sources/settings, validate connectivity, and run copy workflows.
 
 ### Optional startup flags
 
@@ -150,8 +151,8 @@ Actions:
 
 ## Repository
 
-- Upstream project: [cosmickatamari/game-populator](https://github.com/cosmickatamari/game-populator)
+Official Home: [cosmickatamari/game-populator](https://github.com/cosmickatamari/game-populator)
 
 ## License
 
-GNU General Public License v3.0 — see [LICENSE](LICENSE).
+GNU General Public License v3.0 - see [LICENSE](LICENSE).

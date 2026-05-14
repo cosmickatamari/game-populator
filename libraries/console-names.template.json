@@ -138,8 +138,7 @@
     "Extensions": [
       ".bin",
       ".gg",
-      ".sg",
-      ".sms"
+      ".sg"
     ]
   },
   {
@@ -215,10 +214,7 @@
     "ShortName": "NeoGeo",
     "Name": "SNK Neo Geo AES \u0026 MVS",
     "Extensions": [
-      ".bin",
-      ".chd",
-      ".cue",
-      ".neo"
+      ".zip"
     ]
   },
   {
@@ -334,13 +330,14 @@
     "ShortName": "SCV",
     "Name": "Epoch Co Super Cassette Vision",
     "Extensions": [
+      ".0",
+      ".1",
       ".bin"
     ]
   },
   {
     "ShortName": "SGB",
     "Name": "Nintendo Super Game Boy (GB original)",
-    "SubDir": "01 - Super Game Boy (GB)",
     "Extensions": [
       ".gb",
       ".sfc"
@@ -349,7 +346,6 @@
   {
     "ShortName": "SGB",
     "Name": "Nintendo Super Game Boy (GBC original)",
-    "SubDir": "02 - Super Game Boy (GBC)",
     "Extensions": [
       ".gbc"
     ]

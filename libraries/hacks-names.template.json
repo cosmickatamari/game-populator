@@ -2,51 +2,51 @@
   {
     "ShortName": "MegaDrive",
     "Name": "Sega Genesis - Mega Drive - Enhanced Colors",
-    "SubDir": "05 - Enhanced Colors",
+    "SubDir": "10 - Enhanced Colors",
     "Extensions": [
       ".bin",
       ".gen",
-      ".md",
-      ".sms"
+      ".md"
     ]
   },
   {
     "ShortName": "MegaDrive",
     "Name": "Sega Genesis - Mega Drive - MD\u002B",
-    "SubDir": "06 - MD\u002B",
+    "SubDir": "20 - MD\u002B",
+    "Optical": "yes",
     "Extensions": [
       ".bin",
       ".gen",
-      ".md",
-      ".sms"
+      ".md"
     ]
   },
   {
     "ShortName": "MegaDrive",
     "Name": "Sega Genesis - Mega Drive - Mode 1 CD",
-    "SubDir": "07 - Mode 1 CD",
+    "SubDir": "21 - Mode 1 CD",
+    "Optical": "yes",
     "Extensions": [
       ".bin",
       ".gen",
-      ".md",
-      ".sms"
+      ".md"
     ]
   },
   {
     "ShortName": "MegaDrive",
     "Name": "Sega Genesis - Mega Drive - MSU-MD",
-    "SubDir": "02 - MSU-MD",
+    "SubDir": "22 - MSU-MD",
+    "Optical": "yes",
     "Extensions": [
       ".bin",
       ".gen",
-      ".md",
-      ".sms"
+      ".md"
     ]
   },
   {
     "ShortName": "S32x",
     "Name": "Sega 32X - MSU-MD",
-    "SubDir": "01 - MSU-MD",
+    "SubDir": "20 - MSU-MD",
+    "Optical": "yes",
     "Extensions": [
       ".32x"
     ]
@@ -54,7 +54,7 @@
   {
     "ShortName": "SNES",
     "Name": "Super Nintendo Entertainment System - Enhanced Colors",
-    "SubDir": "05 - Enhanced Colors",
+    "SubDir": "10 - Enhanced Colors",
     "Extensions": [
       ".bin",
       ".smc",
@@ -64,7 +64,8 @@
   {
     "ShortName": "SNES",
     "Name": "Super Nintendo Entertainment System - MSU-1",
-    "SubDir": "03 - MSU-1",
+    "SubDir": "20 - MSU-1",
+    "Optical": "yes",
     "Extensions": [
       ".bin",
       ".smc",
@@ -74,7 +75,7 @@
   {
     "ShortName": "SNES",
     "Name": "Super Nintendo Entertainment System - Speed Hacks",
-    "SubDir": "04 - Speed Hacks",
+    "SubDir": "11 - Speed Hacks",
     "Extensions": [
       ".bin",
       ".smc",

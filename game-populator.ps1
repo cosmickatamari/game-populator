@@ -3,7 +3,7 @@ Game Populator
 https://github.com/cosmickatamari/game-populator
 
 Created by: cosmickatamari
-Updated: 05/09/2026
+Updated: 05/14/2026
 #>
 
 param(
@@ -345,6 +345,7 @@ if (-not $DestinationRoot) {
     Write-Fail 'DestinationRoot is required.'
 }
 $DestinationRoot = Resolve-DestinationPath -Path $DestinationRoot
+$destinationRootBeforeGamesSubfolder = $DestinationRoot.TrimEnd('\', '/')
 $DestinationRoot = Resolve-DestinationGamesSubfolder -Path $DestinationRoot
 if (-not $TempRoot) {
     Write-Host 'Temp folder is not set. Edit ' -NoNewline -ForegroundColor DarkYellow
@@ -370,7 +371,8 @@ $settingsLabelWidth = 26
 
 Write-Host "Settings:" -ForegroundColor Cyan
 Write-Host ("  - {0,-$settingsLabelWidth}" -f 'Destination:') -NoNewline -ForegroundColor White
-Write-Host $DestinationRoot -ForegroundColor Green
+Write-Host (Format-PathForDisplay $destinationRootBeforeGamesSubfolder) -NoNewline -ForegroundColor Green
+Write-Host ('  (games folder: ' + (Format-PathForDisplay $DestinationRoot) + ')') -ForegroundColor DarkGray
 Write-Host ("  - {0,-$settingsLabelWidth}" -f 'Temp Folder:') -NoNewline -ForegroundColor White
 Write-Host (Format-PathForDisplay $TempRoot) -ForegroundColor Green
 Write-Host ("  - {0,-$settingsLabelWidth}" -f 'Active components:') -NoNewline -ForegroundColor White
@@ -440,10 +442,18 @@ else {
         Invoke-OutputFlush
         Write-ScriptDiag "Read-Host menu (waiting for 1-14, H, E, or [Enter] to exit)"
         if (-not (Test-GamePopulatorResolvedShareFolderPrecheckOk -PathResolvedOrRaw $DestinationRoot)) {
-            Write-Host 'Warning:' -ForegroundColor DarkRed
-            Write-Host ' - The destination location is not reachable.' -ForegroundColor Red
-            Write-Host ' -- Reestablish the connection or define another destination (option 2 from main menu).' -ForegroundColor Red
-            Write-Host ""
+            $gamesDirEnsured = Initialize-DestinationGamesDirectory -DestinationRootRaw $DestinationRoot
+            if (-not (Test-GamePopulatorResolvedShareFolderPrecheckOk -PathResolvedOrRaw $DestinationRoot)) {
+                Write-Host 'Warning:' -ForegroundColor DarkRed
+                if ($gamesDirEnsured) {
+                    Write-Host ' - The destination location is not reachable.' -ForegroundColor Red
+                }
+                else {
+                    Write-Host ' - The destination location is not reachable nor can the games directory be autocreated.' -ForegroundColor Red
+                }
+                Write-Host ' -- Reestablish the connection or define another destination (option 2 from main menu).' -ForegroundColor Red
+                Write-Host ""
+            }
         }
         $choice = (Read-Host "Select 1-14, H for help, or [Enter] to exit").Trim()
         if ([string]::IsNullOrWhiteSpace($choice) -or $choice -match '^(?i)(e|exit)$') { exit 0 }
@@ -597,7 +607,6 @@ else {
                     Write-Warn 'The destination configured in libraries\settings.json is not reachable. Use main menu option 2 before single-system copy.'
                     continue
                 }
-                Clear-Host | Out-Null
                 $wizSsMn = Invoke-GpSingleSystemMigrateInteractiveWizard -DisplayNameMap $consoleDisplayNameMap -DestinationRootRaw $DestinationRoot -ShareUser ($settings.ShareUser) -SharePassword $settings.SharePassword -ConsoleOpticalDisplaySetHashSetObj $consoleOpticalSet -AllConsolesMerged $allConsoles
                 if ($null -eq $wizSsMn) {
                     Write-Info 'Restarting script to return to the main menu...'
@@ -869,6 +878,9 @@ try {
     }
     $DestinationRoot = $destInfo.Path
     $destDrive = $destInfo.Drive
+    if (-not (Test-Path -LiteralPath $DestinationRoot -PathType Container)) {
+        New-Item -Path $DestinationRoot -ItemType Directory -Force -ErrorAction Stop | Out-Null
+    }
 }
 catch {
     $msg = $_.Exception.Message
@@ -1073,6 +1085,8 @@ if (-not (Test-Path -LiteralPath $logsDir -PathType Container)) {
     New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
 }
 $checkpointPath = Join-Path $logsDir 'game-populator-checkpoint.json'
+$script:GpCleanupRemovalLogLiteralPath = $null
+$script:GpCleanupRemovalLogFileName = $null
 
 $copyInvokedViaParameter = ([bool]$Org) -or ([bool]$NoOrg)
 $stdinRedirectedGlob = $false
@@ -1124,10 +1138,6 @@ if ($runOrchestrationEligible) {
             Invoke-GamePopulatorScriptRestart
         }
     }
-    elseif ((-not $copyInvokedViaParameter) -and (-not ($script:GpSingleSystemInteractiveSession))) {
-        $ConsoleSourcesReachable = @(Invoke-GpSelectReachableSubsetInteractive -ReachableSources $ConsoleSourcesReachable -DisplayNameMapForKeys $consoleDisplayNameMap)
-    }
-
     $fpSingleConsoleKeySeg = ''
     if ($script:GpSingleSystemInteractiveSession -and ($null -ne $ConsoleSourcesReachable) -and (@($ConsoleSourcesReachable).Count -gt 0)) {
         try {
@@ -1188,7 +1198,7 @@ if ($runOrchestrationEligible) {
                 foreach ($x in @($completedFromCkListRaw)) {
                     [void]$completedSetCk.Add($x)
                 }
-                $gpResumeBootstrapCompleted = @(($completedSetCk.ToArray()) | Sort-Object)
+                $gpResumeBootstrapCompleted = @($completedSetCk | Sort-Object)
                 $ConsoleSourcesReachable = @($ConsoleSourcesReachable | Where-Object { -not $completedSetCk.Contains(([string]$_.Name).Trim().ToLowerInvariant()) })
                 if ($ConsoleSourcesReachable.Count -eq 0) {
                     Write-Host ''
@@ -1290,18 +1300,18 @@ if ($doProcessing) {
         $consoleOrganizeTimer = [System.Diagnostics.Stopwatch]::StartNew()
         $script:organizeLastTick = @{}
         Update-OrganizeProgress -ConsoleName $target.Name -Stopwatch $consoleOrganizeTimer
+        $organizeKey = $target.Name.ToLowerInvariant()
         if ($organizeRegions) {
             # BIN/CUE must always stay in per-game folders (Console/Region/GameName), never on region or console root.
-            Move-RegionInFolder -FolderPath $target.Path -ProgressConsoleName $target.Name -ProgressStopwatch $consoleOrganizeTimer -AllowBinCue:$true
+            Move-RegionInFolder -FolderPath $target.Path -ProgressConsoleName $target.Name -ProgressStopwatch $consoleOrganizeTimer -AllowBinCue:$true -ConsoleKeyLower $organizeKey
         }
         else {
             # When flattening (no region), BIN/CUE must always stay in per-game folders; never move them to console root.
-            Convert-ConsoleFolder -FolderPath $target.Path -AllowBinCue:$true -ProgressConsoleName $target.Name -ProgressStopwatch $consoleOrganizeTimer
+            Convert-ConsoleFolder -FolderPath $target.Path -AllowBinCue:$true -ProgressConsoleName $target.Name -ProgressStopwatch $consoleOrganizeTimer -ConsoleKeyLower $organizeKey
         }
         if ($maxFilesPerFolder -gt 0) {
             Invoke-Everdrive256FolderChunking -RootPath $target.Path -MaxFiles $maxFilesPerFolder
         }
-        $organizeKey = $target.Name.ToLowerInvariant()
         if ($organizeKey -eq 'nintendo game boy' -or $organizeKey -eq 'nintendo game boy color') {
             Remove-SgbEnhancedFilesUnderFolder -FolderPath $target.Path
         }
@@ -1340,6 +1350,15 @@ if ($doProcessing) {
         }
         $displayName = if ($consoleDisplayNameMap[$consoleKey]) { $consoleDisplayNameMap[$consoleKey] } else { $name }
 
+        $organizeForThisConsole = [bool]$organizeRegions
+        if ($consoleKey -eq 'snk neo geo aes & mvs') {
+            $organizeForThisConsole = $false
+        }
+        elseif ($consoleKey -eq 'music files - nintendo entertainment system' -or $consoleKey -eq 'music files - super nintendo entertainment system') {
+            $organizeForThisConsole = $false
+        }
+        $isNeoGeo = ($consoleKey -eq 'snk neo geo aes & mvs')
+
         $drivePath = $null
         try {
             $drivePath = New-ShareDrive -Root $sourceRoot -User $user -Password $pass
@@ -1367,17 +1386,49 @@ if ($doProcessing) {
             }
             if (-not ($script:CustomRunActive -and $consoleKey -eq 'custom run')) {
                 Write-Host "Console: $displayName" -ForegroundColor DarkCyan
+                $destPreviewLine = Get-DestinationPathForConsoleSource -DestinationRoot $DestinationRoot -ConsoleKey $consoleKey -ShortName $shortName
+                Write-Host ("  -> " + (Format-PathForDisplay $destPreviewLine)) -ForegroundColor DarkCyan
             }
-            Write-Host "Scanning files on source library (recursive scan of every file; large libraries can take awhile)..." -ForegroundColor DarkGray
             Invoke-OutputFlush
             Write-ScriptDiag "Get-ChildItem -Recurse -File on source (enumerates entire tree)"
+
+            $isSgbConsole = (
+                $consoleKey -eq 'nintendo super game boy (gb original)' -or
+                $consoleKey -eq 'nintendo super game boy (gbc original)')
+            $isGbOrGbc = ($consoleKey -eq 'nintendo game boy' -or $consoleKey -eq 'nintendo game boy color')
 
             $fileItems = @(Get-ChildItem -LiteralPath $drivePath -Force -Recurse -File -ErrorAction Stop)
 
             $nFilesStr = $fileItems.Count.ToString('N0', [System.Globalization.CultureInfo]::GetCultureInfo('en-US'))
             Write-Host "Found " -NoNewline -ForegroundColor DarkGray
             Write-Host $nFilesStr -NoNewline -ForegroundColor White
-            Write-Host " file(s) on source." -ForegroundColor DarkGray
+            Write-Host " file(s) on source" -NoNewline -ForegroundColor DarkGray
+            if (($isSgbConsole -or $isGbOrGbc) -and $fileItems.Count -gt 0) {
+                $allowedForMeasure = $consoleExtensionsMap[$consoleKey]
+                if (-not $allowedForMeasure) {
+                    $allowedForMeasure = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+                    $allowedForMeasure.Add('.rom') | Out-Null
+                }
+                $prefSz = ''
+                if ($settings.SevenZipExe) {
+                    $prefSz = ([string]$settings.SevenZipExe).Trim()
+                }
+                $szInnerForRules = Resolve-GpSevenZipExePathWithFallbacks -Preferred $prefSz
+                $eligibleOnSource = Measure-DirectoryFileCountAndBytes `
+                    -LiteralDirectoryPath $drivePath `
+                    -SevenZipExeForUnpackedEstimate '' `
+                    -ArchiveExtensionsForUnpackedEstimate @($archiveExts) `
+                    -AllowedExtensionsForEligibility $allowedForMeasure `
+                    -UseOpticalCopySemantics:($consoleOpticalSet.Contains($displayName)) `
+                    -ConsoleKeyLowerForRomNamingRules $consoleKey `
+                    -SevenZipExeForSgbArchiveInnerListing $szInnerForRules `
+                    -PreenumeratedSourceFiles $fileItems
+                $elStr = $eligibleOnSource.FileCount.ToString('N0', [System.Globalization.CultureInfo]::GetCultureInfo('en-US'))
+                Write-Host " (" -NoNewline -ForegroundColor DarkGray
+                Write-Host $elStr -NoNewline -ForegroundColor White
+                Write-Host " after this console's Game Boy / Super Game Boy filename rules)" -NoNewline -ForegroundColor DarkGray
+            }
+            Write-Host "." -ForegroundColor DarkGray
             Invoke-OutputFlush
 
             if ($fileItems.Count -eq 0) {
@@ -1393,14 +1444,9 @@ if ($doProcessing) {
                 Get-DestinationPathForConsoleSource -DestinationRoot $DestinationRoot -ConsoleKey $consoleKey -ShortName $shortName
             }
 
-            $isSgbConsole = (
-                $consoleKey -eq 'nintendo super game boy (gb original)' -or
-                $consoleKey -eq 'nintendo super game boy (gbc original)')
-            $isGbOrGbc = ($consoleKey -eq 'nintendo game boy' -or $consoleKey -eq 'nintendo game boy color')
-
             Write-Host "Preparing the destination console folder and building a filename index." -ForegroundColor DarkGray
             Invoke-OutputFlush
-            Invoke-ExistingDestination -FolderPath $consoleDest -Organize $organizeRegions -ArchiveExtensions $archiveExts
+            Invoke-ExistingDestination -FolderPath $consoleDest -Organize $organizeForThisConsole -ArchiveExtensions $archiveExts -ConsoleKeyLower $consoleKey
             if ($isGbOrGbc) {
                 Remove-SgbEnhancedFilesUnderFolder -FolderPath $consoleDest
             }
@@ -1419,13 +1465,24 @@ if ($doProcessing) {
             $allowedExtSet = $consoleExtensionsMap[$consoleKey]
             if (-not $allowedExtSet) { $allowedExtSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase); $allowedExtSet.Add('.rom') | Out-Null }
 
-            $useZipDestForNonOptical = (($script:GpMigrateAssetMode -eq 'zipDest') -and -not ($consoleOpticalSet.Contains($displayName)))
+            $sourceSplitExtSet = $allowedExtSet
+            if ($isNeoGeo) {
+                $sourceSplitExtSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+                foreach ($sx in $allowedExtSet) {
+                    [void]$sourceSplitExtSet.Add($sx)
+                }
+                foreach ($nx in @('.7z', '.rar', '.neo')) {
+                    [void]$sourceSplitExtSet.Add($nx)
+                }
+            }
+
+            $useZipDestForNonOptical = (($script:GpMigrateAssetMode -eq 'zipDest') -and -not ($consoleOpticalSet.Contains($displayName)) -and (-not $isNeoGeo))
 
             if ($consoleOpticalSet.Contains($displayName)) {
                 $chdFiles = @($fileItems | Where-Object { $_.Extension -ieq '.chd' })
                 foreach ($chd in $chdFiles) {
                     if (-not $allowedExtSet.Contains('.chd')) { continue }
-                    $chdRoot = Get-RegionDestRoot -BasePath $consoleDest -Name $chd.Name -Organize $organizeRegions
+                    $chdRoot = Get-RegionDestRoot -BasePath $consoleDest -ConsoleKeyLower $consoleKey -Name $chd.Name -Organize $organizeForThisConsole
                     $destFile = Join-Path $chdRoot $chd.Name
                     if (Test-Path -LiteralPath $destFile) { continue }
                     if (-not $createdConsoleDir) {
@@ -1442,8 +1499,8 @@ if ($doProcessing) {
                     $consoleBytes += $chd.Length
                     $consoleFiles += 1
                     Add-NameToSet -Set ([ref]$destNameSet) -Name $chd.Name
-                    Add-RegionCount -Counts $consoleRegionCounts -Name $chd.Name -Organize $organizeRegions | Out-Null
-                    Add-RegionCount -Counts $script:regionTotals -Name $chd.Name -Organize $organizeRegions | Out-Null
+                    Add-RegionCount -Counts $consoleRegionCounts -Name $chd.Name -Organize $organizeForThisConsole | Out-Null
+                    Add-RegionCount -Counts $script:regionTotals -Name $chd.Name -Organize $organizeForThisConsole | Out-Null
                 }
 
                 $binCueFolders = Get-BinCueFoldersFromItems -Items $fileItems
@@ -1452,7 +1509,7 @@ if ($doProcessing) {
                     if (-not $dir) { continue }
                     $processedDirs.Add($dir.FullName) | Out-Null
 
-                    $binRoot = Get-RegionDestRoot -BasePath $consoleDest -Name $dir.Name -Organize $organizeRegions
+                    $binRoot = Get-RegionDestRoot -BasePath $consoleDest -ConsoleKeyLower $consoleKey -Name $dir.Name -Organize $organizeForThisConsole
                     $destFolder = Join-Path $binRoot $dir.Name
                     if (-not $createdConsoleDir) {
                         New-Item -Path $consoleDest -ItemType Directory -Force | Out-Null
@@ -1469,8 +1526,8 @@ if ($doProcessing) {
                     $consoleBytes += $copyResult.Bytes
                     $consoleFiles += $copyResult.Files
                     foreach ($file in $dirItems | Where-Object { -not $_.PSIsContainer }) {
-                        Add-RegionCount -Counts $consoleRegionCounts -Name $file.Name -Organize $organizeRegions | Out-Null
-                        Add-RegionCount -Counts $script:regionTotals -Name $file.Name -Organize $organizeRegions | Out-Null
+                        Add-RegionCount -Counts $consoleRegionCounts -Name $file.Name -Organize $organizeForThisConsole | Out-Null
+                        Add-RegionCount -Counts $script:regionTotals -Name $file.Name -Organize $organizeForThisConsole | Out-Null
                     }
                 }
             }
@@ -1495,7 +1552,7 @@ if ($doProcessing) {
                     $archiveLookup.Add($item.FullName) | Out-Null
                     $archiveItems += $item
                 }
-                elseif ($allowedExtSet.Contains($ext)) {
+                elseif ($sourceSplitExtSet.Contains($ext)) {
                     $otherItems += $item
                 }
             }
@@ -1516,7 +1573,7 @@ if ($doProcessing) {
                     }
                     if ($ext -eq '.chd') {
                         if (-not $allowedExtSet.Contains('.chd')) { continue }
-                        $chdRoot = Get-RegionDestRoot -BasePath $consoleDest -Name $item.Name -Organize $organizeRegions
+                        $chdRoot = Get-RegionDestRoot -BasePath $consoleDest -ConsoleKeyLower $consoleKey -Name $item.Name -Organize $organizeForThisConsole
                         $destFile = Join-Path $chdRoot $item.Name
                         if ($destNameSet -and $destNameSet.Contains($item.Name)) { continue }
                         if (Test-Path -LiteralPath $destFile) { continue }
@@ -1535,18 +1592,62 @@ if ($doProcessing) {
                         $script:totalFiles += 1
                         $consoleBytes += $item.Length
                         $consoleFiles += 1
-                        Add-RegionCount -Counts $consoleRegionCounts -Name $item.Name -Organize $organizeRegions | Out-Null
-                        Add-RegionCount -Counts $script:regionTotals -Name $item.Name -Organize $organizeRegions | Out-Null
+                        Add-RegionCount -Counts $consoleRegionCounts -Name $item.Name -Organize $organizeForThisConsole | Out-Null
+                        Add-RegionCount -Counts $script:regionTotals -Name $item.Name -Organize $organizeForThisConsole | Out-Null
                         continue
                     }
 
                     $isArchive = $archiveLookup.Contains($item.FullName)
 
+                    if ($isNeoGeo) {
+                        if (-not (Test-Path -LiteralPath $consoleDest -PathType Container)) {
+                            New-Item -Path $consoleDest -ItemType Directory -Force | Out-Null
+                        }
+                        $outZipName = [System.IO.Path]::ChangeExtension($item.Name, '.zip')
+                        if ($destNameSet -and $destNameSet.Contains($outZipName)) { continue }
+                        $destZipPath = Join-Path $consoleDest $outZipName
+                        if (Test-Path -LiteralPath $destZipPath) { continue }
+                        if ($ext -eq '.zip' -and $isArchive) {
+                            $copyZpNg = Copy-ItemsFlatNoOverwrite -Items @($item) -DestRoot $consoleDest
+                            if ($copyZpNg.Files -gt 0) {
+                                Write-ProgressLine -Action "Copying ZIP" -ItemName $outZipName -Bytes $item.Length -Elapsed $script:currentConsoleStopwatch.Elapsed
+                                Add-NameToSet -Set ([ref]$destNameSet) -Name $outZipName
+                                $script:totalBytes += $copyZpNg.Bytes
+                                $script:totalFiles += $copyZpNg.Files
+                                $consoleBytes += $copyZpNg.Bytes
+                                $consoleFiles += $copyZpNg.Files
+                            }
+                            continue
+                        }
+                        if (-not $isArchive) { continue }
+                        Initialize-7z
+                        $tempNeo = Join-Path $TempRoot ([Guid]::NewGuid().ToString('N'))
+                        New-Item -Path $tempNeo -ItemType Directory -Force | Out-Null
+                        try {
+                            Invoke-7z -Arguments @('x', '-y', '-bso1', '-bse1', '-bsp1', "-o$tempNeo", $item.FullName) -ProgressLabel "Extracting" -ProgressName $item.Name
+                            $outZipAbs = [System.IO.Path]::GetFullPath($destZipPath)
+                            Invoke-Gp7zCompressFlatWorkingDirToNewZipMax -WorkingLiteralDirectoryWithFiles $tempNeo -DestinationZipLiteralPath $outZipAbs -ProgressName $outZipName
+                            $outLenNg = (Get-Item -LiteralPath $outZipAbs).Length
+                            Write-ProgressLine -Action "Repacked to ZIP" -ItemName $outZipName -Bytes $outLenNg -Elapsed $script:currentConsoleStopwatch.Elapsed
+                            Add-NameToSet -Set ([ref]$destNameSet) -Name $outZipName
+                            $script:totalBytes += $outLenNg
+                            $script:totalFiles += 1
+                            $consoleBytes += $outLenNg
+                            $consoleFiles += 1
+                        }
+                        finally {
+                            if (Test-Path -LiteralPath $tempNeo) {
+                                Remove-Item -LiteralPath $tempNeo -Recurse -Force
+                            }
+                        }
+                        continue
+                    }
+
                     if ($useZipDestForNonOptical -and (-not $isArchive)) {
                         if (-not (Test-Path -LiteralPath $consoleDest -PathType Container)) {
                             New-Item -Path $consoleDest -ItemType Directory -Force | Out-Null
                         }
-                        $flatRootLooseZ = Get-RegionDestRoot -BasePath $consoleDest -Name $item.Name -Organize $organizeRegions
+                        $flatRootLooseZ = Get-RegionDestRoot -BasePath $consoleDest -ConsoleKeyLower $consoleKey -Name $item.Name -Organize $organizeForThisConsole
                         if (-not (Test-Path -LiteralPath $flatRootLooseZ)) {
                             New-Item -Path $flatRootLooseZ -ItemType Directory -Force | Out-Null
                         }
@@ -1563,8 +1664,8 @@ if ($doProcessing) {
                         $script:totalFiles += 1
                         $consoleBytes += $bundleLen
                         $consoleFiles += 1
-                        Add-RegionCount -Counts $consoleRegionCounts -Name $bundleZipName -Organize $organizeRegions | Out-Null
-                        Add-RegionCount -Counts $script:regionTotals -Name $bundleZipName -Organize $organizeRegions | Out-Null
+                        Add-RegionCount -Counts $consoleRegionCounts -Name $bundleZipName -Organize $organizeForThisConsole | Out-Null
+                        Add-RegionCount -Counts $script:regionTotals -Name $bundleZipName -Organize $organizeForThisConsole | Out-Null
                         continue
                     }
 
@@ -1572,7 +1673,7 @@ if ($doProcessing) {
                         if (-not (Test-Path -LiteralPath $consoleDest -PathType Container)) {
                             New-Item -Path $consoleDest -ItemType Directory -Force | Out-Null
                         }
-                        $flatRootSrcZip = Get-RegionDestRoot -BasePath $consoleDest -Name $item.Name -Organize $organizeRegions
+                        $flatRootSrcZip = Get-RegionDestRoot -BasePath $consoleDest -ConsoleKeyLower $consoleKey -Name $item.Name -Organize $organizeForThisConsole
                         if (-not (Test-Path -LiteralPath $flatRootSrcZip)) {
                             New-Item -Path $flatRootSrcZip -ItemType Directory -Force | Out-Null
                         }
@@ -1585,8 +1686,8 @@ if ($doProcessing) {
                             $consoleBytes += $copyZp.Bytes
                             $consoleFiles += $copyZp.Files
                             Add-NameToSet -Set ([ref]$destNameSet) -Name $item.Name
-                            Add-RegionCount -Counts $consoleRegionCounts -Name $item.Name -Organize $organizeRegions | Out-Null
-                            Add-RegionCount -Counts $script:regionTotals -Name $item.Name -Organize $organizeRegions | Out-Null
+                            Add-RegionCount -Counts $consoleRegionCounts -Name $item.Name -Organize $organizeForThisConsole | Out-Null
+                            Add-RegionCount -Counts $script:regionTotals -Name $item.Name -Organize $organizeForThisConsole | Out-Null
                         }
                         continue
                     }
@@ -1597,7 +1698,7 @@ if ($doProcessing) {
                         if (-not (Test-Path -LiteralPath $consoleDest -PathType Container)) {
                             New-Item -Path $consoleDest -ItemType Directory -Force | Out-Null
                         }
-                        $flatRootRepack = Get-RegionDestRoot -BasePath $consoleDest -Name $item.Name -Organize $organizeRegions
+                        $flatRootRepack = Get-RegionDestRoot -BasePath $consoleDest -ConsoleKeyLower $consoleKey -Name $item.Name -Organize $organizeForThisConsole
                         if (-not (Test-Path -LiteralPath $flatRootRepack)) {
                             New-Item -Path $flatRootRepack -ItemType Directory -Force | Out-Null
                         }
@@ -1617,8 +1718,8 @@ if ($doProcessing) {
                             $script:totalFiles += 1
                             $consoleBytes += $outLen
                             $consoleFiles += 1
-                            Add-RegionCount -Counts $consoleRegionCounts -Name $outZipName -Organize $organizeRegions | Out-Null
-                            Add-RegionCount -Counts $script:regionTotals -Name $outZipName -Organize $organizeRegions | Out-Null
+                            Add-RegionCount -Counts $consoleRegionCounts -Name $outZipName -Organize $organizeForThisConsole | Out-Null
+                            Add-RegionCount -Counts $script:regionTotals -Name $outZipName -Organize $organizeForThisConsole | Out-Null
                         }
                         finally {
                             if (Test-Path -LiteralPath $tempRepack) {
@@ -1652,7 +1753,7 @@ if ($doProcessing) {
                             if ($isBinCueArchive) {
                                 $gameFolderName = $item.BaseName
                                 $region = Get-RegionFromFiles -Files $allExtractedFiles
-                                $archiveRoot = Get-RegionDestRootFromRegion -BasePath $consoleDest -Region $region -Organize $organizeRegions
+                                $archiveRoot = Get-RegionDestRootFromRegion -BasePath $consoleDest -ConsoleKeyLower $consoleKey -ReferenceName $item.Name -Region $region -Organize $organizeForThisConsole
                                 if (-not (Test-Path -LiteralPath $archiveRoot)) {
                                     New-Item -Path $archiveRoot -ItemType Directory -Force | Out-Null
                                 }
@@ -1682,15 +1783,52 @@ if ($doProcessing) {
                                 $destNameSet = if ($destNameSet) { Convert-NameSet -NameSet $destNameSet } else { New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase) }
                                 foreach ($file in $filteredItems) {
                                     Add-NameToSet -Set ([ref]$destNameSet) -Name $file.Name
-                                    Add-RegionCount -Counts $consoleRegionCounts -Name $file.Name -Organize $organizeRegions | Out-Null
-                                    Add-RegionCount -Counts $script:regionTotals -Name $file.Name -Organize $organizeRegions | Out-Null
+                                    Add-RegionCount -Counts $consoleRegionCounts -Name $file.Name -Organize $organizeForThisConsole | Out-Null
+                                    Add-RegionCount -Counts $script:regionTotals -Name $file.Name -Organize $organizeForThisConsole | Out-Null
+                                }
+                            }
+                            elseif (($hacksOpticalPerArchiveGameFolderDisplaySet.Contains($displayName)) -or ($consoleKey -eq 'music files - super nintendo entertainment system')) {
+                                $gameFolderName = $item.BaseName
+                                $region = Get-RegionFromFiles -Files $allExtractedFiles
+                                $archiveRoot = Get-RegionDestRootFromRegion -BasePath $consoleDest -ConsoleKeyLower $consoleKey -ReferenceName $item.Name -Region $region -Organize $organizeForThisConsole
+                                if (-not (Test-Path -LiteralPath $archiveRoot)) {
+                                    New-Item -Path $archiveRoot -ItemType Directory -Force | Out-Null
+                                }
+                                $destGameFolder = Join-Path $archiveRoot $gameFolderName
+                                $nameSet = if ($destNameSet) { $destNameSet } else { (New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)) }
+                                if (-not $nameSet) { $nameSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase) }
+                                $filteredItems = @()
+                                foreach ($extracted in $allExtractedFiles) {
+                                    $extractedName = $extracted.Name
+                                    if (-not $extractedName) { continue }
+                                    if ($isGbOrGbc -and (Test-IsSgbEnhancedRomName -Name $extractedName)) { continue }
+                                    if ($isSgbConsole -and -not (Test-IncludeSgbEnhancedForConsole -Name $extractedName -Extension $extracted.Extension -ConsoleKeyLower $consoleKey)) { continue }
+                                    if ($nameSet -and $nameSet.Contains($extractedName)) { continue }
+                                    $filteredItems += $extracted
+                                }
+                                if (-not $filteredItems -or $filteredItems.Count -eq 0) { continue }
+                                $extractedSize = Get-DirectorySize -Path $tempExtract
+                                Write-ProgressLine -Action "Copying extracted" -ItemName $gameFolderName -Bytes $extractedSize -Elapsed $script:currentConsoleStopwatch.Elapsed
+                                if (-not (Test-Path -LiteralPath $destGameFolder)) {
+                                    New-Item -Path $destGameFolder -ItemType Directory -Force | Out-Null
+                                }
+                                $copyResult = Copy-ItemsFlatNoOverwrite -Items $filteredItems -DestRoot $destGameFolder
+                                $script:totalBytes += $copyResult.Bytes
+                                $script:totalFiles += $copyResult.Files
+                                $consoleBytes += $copyResult.Bytes
+                                $consoleFiles += $copyResult.Files
+                                $destNameSet = if ($destNameSet) { Convert-NameSet -NameSet $destNameSet } else { New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase) }
+                                foreach ($file in $filteredItems) {
+                                    Add-NameToSet -Set ([ref]$destNameSet) -Name $file.Name
+                                    Add-RegionCount -Counts $consoleRegionCounts -Name $file.Name -Organize $organizeForThisConsole | Out-Null
+                                    Add-RegionCount -Counts $script:regionTotals -Name $file.Name -Organize $organizeForThisConsole | Out-Null
                                 }
                             }
                             else {
                                 $extractedSize = Get-DirectorySize -Path $tempExtract
                                 Write-ProgressLine -Action "Copying extracted" -ItemName $item.BaseName -Bytes $extractedSize -Elapsed $script:currentConsoleStopwatch.Elapsed
                                 $region = Get-RegionFromFiles -Files $extractedItems
-                                $archiveRoot = Get-RegionDestRootFromRegion -BasePath $consoleDest -Region $region -Organize $organizeRegions
+                                $archiveRoot = Get-RegionDestRootFromRegion -BasePath $consoleDest -ConsoleKeyLower $consoleKey -ReferenceName $item.Name -Region $region -Organize $organizeForThisConsole
                                 if (-not (Test-Path -LiteralPath $archiveRoot)) {
                                     New-Item -Path $archiveRoot -ItemType Directory -Force | Out-Null
                                 }
@@ -1715,8 +1853,8 @@ if ($doProcessing) {
                                 $destNameSet = if ($destNameSet) { Convert-NameSet -NameSet $destNameSet } else { New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase) }
                                 foreach ($file in $filteredItems) {
                                     Add-NameToSet -Set ([ref]$destNameSet) -Name $file.Name
-                                    Add-RegionCount -Counts $consoleRegionCounts -Name $file.Name -Organize $organizeRegions | Out-Null
-                                    Add-RegionCount -Counts $script:regionTotals -Name $file.Name -Organize $organizeRegions | Out-Null
+                                    Add-RegionCount -Counts $consoleRegionCounts -Name $file.Name -Organize $organizeForThisConsole | Out-Null
+                                    Add-RegionCount -Counts $script:regionTotals -Name $file.Name -Organize $organizeForThisConsole | Out-Null
                                 }
                             }
                         }
@@ -1731,7 +1869,7 @@ if ($doProcessing) {
                     if (-not (Test-Path -LiteralPath $consoleDest -PathType Container)) {
                         New-Item -Path $consoleDest -ItemType Directory -Force | Out-Null
                     }
-                    $flatRoot = Get-RegionDestRoot -BasePath $consoleDest -Name $item.Name -Organize $organizeRegions
+                    $flatRoot = Get-RegionDestRoot -BasePath $consoleDest -ConsoleKeyLower $consoleKey -Name $item.Name -Organize $organizeForThisConsole
                     if (-not (Test-Path -LiteralPath $flatRoot)) {
                         New-Item -Path $flatRoot -ItemType Directory -Force | Out-Null
                     }
@@ -1744,8 +1882,8 @@ if ($doProcessing) {
                         $consoleBytes += $copyResult.Bytes
                         $consoleFiles += $copyResult.Files
                         Add-NameToSet -Set ([ref]$destNameSet) -Name $item.Name
-                        Add-RegionCount -Counts $consoleRegionCounts -Name $item.Name -Organize $organizeRegions | Out-Null
-                        Add-RegionCount -Counts $script:regionTotals -Name $item.Name -Organize $organizeRegions | Out-Null
+                        Add-RegionCount -Counts $consoleRegionCounts -Name $item.Name -Organize $organizeForThisConsole | Out-Null
+                        Add-RegionCount -Counts $script:regionTotals -Name $item.Name -Organize $organizeForThisConsole | Out-Null
                     }
                 }
                 catch {
@@ -1757,6 +1895,16 @@ if ($doProcessing) {
 
             if ($maxFilesPerFolder -gt 0 -and -not ($script:CustomRunActive -and $consoleKey -eq 'custom run')) {
                 Invoke-Everdrive256FolderChunking -RootPath $consoleDest -MaxFiles $maxFilesPerFolder
+            }
+
+            if ($doCleanup -and (-not ($script:CustomRunActive -and $consoleKey -eq 'custom run')) -and (Test-Path -LiteralPath $consoleDest -PathType Container)) {
+                $extCleanupList = @()
+                foreach ($ex in @($allowedExtSet)) {
+                    $extCleanupList += $ex
+                }
+                if ($extCleanupList.Count -gt 0) {
+                    $null = Remove-DestinationFilesNotMatchingExtensions -FolderPath $consoleDest -AllowedExtensions $extCleanupList -CleanupLogsParentLiteralPath $logsDir
+                }
             }
 
             if ($script:lastLineLength -gt 0) {
@@ -1783,7 +1931,7 @@ if ($doProcessing) {
                 }
                 if ($useRunCheckpointSetting -and $runOrchestrationEligible -and (-not [string]::IsNullOrWhiteSpace($plannedFingerprintHexForRun))) {
                     [void]$gpCheckpointAccumulator.Add([string]$consoleKey)
-                    $completedArrCk = @(($gpCheckpointAccumulator.ToArray()) | Sort-Object)
+                    $completedArrCk = @($gpCheckpointAccumulator | Sort-Object)
                     Save-GpRunCheckpointSilently -CheckpointLiteralPath $checkpointPath -State @{
                         schemaVersion            = 1
                         runId                    = [string]$checkpointRunGuid
@@ -1853,7 +2001,7 @@ $cleanupFilesRemoved = 0
 $cleanupFoldersRemoved = 0
 $cleanupSkippedDestinationUnreachable = $false
 # Destination check: remove any files not in the console's allowed extensions list (.rom and .zip always allowed).
-# Scans: each games\<ShortName>[\SubDir] from merged names JSON (including music players from addons-names), and loose files directly under games\ (union of all configured extensions).
+# Scans: each games\<ShortName>[\SubDir] from merged names JSON (including music files from addons-names), and loose files directly under games\ (union of all configured extensions).
 if ($doCleanup) {
     $cleanupStatusJob = $null
     if ($script:RestartAfterInteractiveCleanup) {
@@ -1872,7 +2020,7 @@ if ($doCleanup) {
             Write-Host '[i] Cleanup keeps only allowed extensions per system folder; files loose not in system folders are always removed.' -ForegroundColor DarkYellow
             if ($script:CustomRunActive -and $consoleExtensionsMap.ContainsKey('custom run') -and $consoleExtensionsMap['custom run']) {
                 $customAllowed = @($consoleExtensionsMap['custom run'])
-                $fr = Remove-DestinationFilesNotMatchingExtensions -FolderPath $DestinationRoot -AllowedExtensions $customAllowed
+                $fr = Remove-DestinationFilesNotMatchingExtensions -FolderPath $DestinationRoot -AllowedExtensions $customAllowed -CleanupLogsParentLiteralPath $logsDir
                 $cleanupFilesRemoved += $fr.FilesRemoved
             }
             elseif (-not $script:CustomRunActive) {
@@ -1891,13 +2039,13 @@ if ($doCleanup) {
                         Write-Warn "Console '$($entry.ShortName)' has no Extensions in merged names JSON; skipping cleanup for that folder (no files removed)."
                         continue
                     }
-                    $fr = Remove-DestinationFilesNotMatchingExtensions -FolderPath $consoleDestPath -AllowedExtensions $extList
+                    $fr = Remove-DestinationFilesNotMatchingExtensions -FolderPath $consoleDestPath -AllowedExtensions $extList -CleanupLogsParentLiteralPath $logsDir
                     $cleanupFilesRemoved += $fr.FilesRemoved
                 }
-                $frGamesRootStray = Remove-DestinationFilesNotMatchingExtensions -FolderPath $DestinationRoot -TopLevelOnly -DeleteAllFiles
+                $frGamesRootStray = Remove-DestinationFilesNotMatchingExtensions -FolderPath $DestinationRoot -TopLevelOnly -DeleteAllFiles -CleanupLogsParentLiteralPath $logsDir
                 $cleanupFilesRemoved += $frGamesRootStray.FilesRemoved
             }
-            $er = Remove-EmptyFolders -RootPath $DestinationRoot
+            $er = Remove-EmptyFolders -RootPath $DestinationRoot -CleanupLogsParentLiteralPath $logsDir
             $cleanupFoldersRemoved = $er.FoldersRemoved
         }
     }
@@ -1944,6 +2092,9 @@ if (-not $suppressCleanupUnreachableRunSummary) {
             Write-Host ($cleanupFoldersRemoved.ToString('N0')) -ForegroundColor White
         }
     }
+    $gamerunFileNameForRun = ('gamerun-{0}.log' -f (Get-Date).ToString('yyyyMMdd-HHmmss'))
+    $gamerunPathForRun = Join-Path $logsDir $gamerunFileNameForRun
+
     if (-not $cleanupOnly) {
         if ($script:didOrganizeExisting) {
             $orgEl = Format-Elapsed $script:organizeElapsed
@@ -1958,6 +2109,8 @@ if (-not $suppressCleanupUnreachableRunSummary) {
         Write-Host "     Total size copied:   " -NoNewline -ForegroundColor DarkCyan
         Write-Host (Format-Size $script:totalBytes) -ForegroundColor White
         if ($script:errors.Count -gt 0) {
+            $runSummaryLogLines.Add('')
+            Write-Host ''
             $timestamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
             $logFileName = "errorlog-$timestamp.log"
             $logPath = Join-Path $logsDir $logFileName
@@ -1982,21 +2135,42 @@ if (-not $suppressCleanupUnreachableRunSummary) {
             }
         }
     }
+
+    if (-not [string]::IsNullOrWhiteSpace($script:GpCleanupRemovalLogFileName) -and (-not [string]::IsNullOrWhiteSpace($script:GpCleanupRemovalLogLiteralPath)) -and (Test-Path -LiteralPath $script:GpCleanupRemovalLogLiteralPath -PathType Leaf)) {
+        $runSummaryLogLines.Add('')
+        Write-Host ''
+        $remMsg = '     A log of removed files was recorded here: ' + $script:GpCleanupRemovalLogFileName
+        $runSummaryLogLines.Add($remMsg)
+        Write-Host $remMsg -ForegroundColor DarkYellow
+    }
+
     $runSummaryLogLines.Add('')
-    Write-Host ""
+    Write-Host ''
+    $runSummaryLogLines.Add(("     Run summary log:    {0}" -f $gamerunFileNameForRun))
+    Write-Host "     Run summary log:    " -NoNewline -ForegroundColor DarkCyan
+    Write-Host $gamerunFileNameForRun -ForegroundColor White
+    $runSummaryLogLines.Add('')
+    Write-Host ''
+    if (-not [string]::IsNullOrWhiteSpace($gpStructuredNdjsonLiteralPathForRun) -and (Test-Path -LiteralPath $gpStructuredNdjsonLiteralPathForRun -PathType Leaf)) {
+        $ndNameForRun = [System.IO.Path]::GetFileName($gpStructuredNdjsonLiteralPathForRun)
+        $runSummaryLogLines.Add(("     Structured NDJSON:  {0}" -f $ndNameForRun))
+        Write-Host "     Structured NDJSON:  " -NoNewline -ForegroundColor DarkCyan
+        Write-Host $ndNameForRun -ForegroundColor White
+    }
+    $runSummaryLogLines.Add('')
+    Write-Host ''
 
     if ($script:consoleSummaries.Count -gt 0) {
         $runSummaryLogLines.Add('===[ Console Summary ]===')
         Write-Host "===[ Console Summary ]===" -ForegroundColor DarkCyan
-        foreach ($summary in $script:consoleSummaries) {
-            $csLine = "{0} completed in {1} copying {2} files using {3}." -f $summary.Name, (Format-Elapsed $summary.Elapsed), $summary.Files.ToString('N0'), (Format-Size $summary.Bytes)
-            $runSummaryLogLines.Add($csLine)
-            Write-Host ("{0} " -f $summary.Name) -NoNewline -ForegroundColor White
-            Write-Host ("completed in {0} copying " -f (Format-Elapsed $summary.Elapsed)) -NoNewline -ForegroundColor White
-            Write-Host ($summary.Files.ToString('N0')) -NoNewline -ForegroundColor DarkCyan
-            Write-Host " files using " -NoNewline -ForegroundColor White
-            Write-Host (Format-Size $summary.Bytes) -NoNewline -ForegroundColor DarkCyan
-            Write-Host "." -ForegroundColor White
+        $consoleTableLines = Get-ConsoleSummaryMarkdownTableLines -Summaries $script:consoleSummaries
+        for ($ti = 0; $ti -lt $consoleTableLines.Count; $ti++) {
+            $tl = $consoleTableLines[$ti]
+            $runSummaryLogLines.Add($tl)
+            $tableFg = 'White'
+            if ($ti -eq 0) { $tableFg = 'DarkCyan' }
+            elseif ($ti -eq 1) { $tableFg = 'DarkGray' }
+            Write-Host $tl -ForegroundColor $tableFg
         }
         $runSummaryLogLines.Add('')
         Write-Host ""
@@ -2010,7 +2184,7 @@ if (-not $suppressCleanupUnreachableRunSummary) {
         # Pad labels so counts align (same style as Region Totals).
         $regionLabelColumn = 14
         $regionSummaryPathSeen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-        foreach ($entry in $consoleNames) {
+        foreach ($entry in @($consoleNames | Sort-Object { [string](if ($null -ne $_.Name -and $_.Name) { $_.Name } else { $_.ShortName }) })) {
             if (-not $entry.ShortName) { continue }
             $consoleDestPath = Join-Path $DestinationRoot $entry.ShortName
             if ($entry.PSObject.Properties['SubDir'] -and $entry.SubDir) {
@@ -2028,7 +2202,7 @@ if (-not $suppressCleanupUnreachableRunSummary) {
             $displayName = if ($entry.Name) { $entry.Name } else { $entry.ShortName }
             $runSummaryLogLines.Add([string]$displayName)
             Write-Host $displayName -ForegroundColor White
-            foreach ($key in (Get-OrderedRegionKeys -Keys $regionCounts.Keys)) {
+            foreach ($key in (Get-OrderedRegionKeys -Keys $regionCounts.Keys -AlphabeticalWithOtherLast)) {
                 $regionLabel = ($key -replace '^\d+\s*-\s*', '')
                 $countText = $regionCounts[$key].ToString('N0', $regionUsCulture)
                 $rLine = $regionLineIndent + $regionLabel.PadRight($regionLabelColumn) + ' - ' + $countText
@@ -2044,7 +2218,7 @@ if (-not $suppressCleanupUnreachableRunSummary) {
         if ($regionTotalsFromDest.Count -gt 0) {
             $runSummaryLogLines.Add('===[ Region Totals ]===')
             Write-Host "===[ Region Totals ]===" -ForegroundColor DarkCyan
-            foreach ($key in (Get-OrderedRegionKeys -Keys $regionTotalsFromDest.Keys)) {
+            foreach ($key in (Get-OrderedRegionKeys -Keys $regionTotalsFromDest.Keys -AlphabeticalWithOtherLast)) {
                 $regionLabel = ($key -replace '^\d+\s*-\s*', '')
                 $countText = $regionTotalsFromDest[$key].ToString('N0', $regionUsCulture)
                 $totLine = $regionLineIndent + $regionLabel.PadRight($regionLabelColumn) + ' - ' + $countText
@@ -2063,17 +2237,8 @@ if (-not $suppressCleanupUnreachableRunSummary) {
         }
     }
 
-    $gamerunFileName = ('gamerun-{0}.log' -f (Get-Date).ToString('yyyyMMdd-HHmmss'))
-    $gamerunPath = Join-Path $logsDir $gamerunFileName
     try {
-        $runSummaryLogLines | Set-Content -LiteralPath $gamerunPath -Encoding UTF8
-        Write-Host ""
-        Write-Host "Run summary log: " -NoNewline -ForegroundColor DarkCyan
-        Write-Host $gamerunFileName -ForegroundColor White
-        if (-not [string]::IsNullOrWhiteSpace($gpStructuredNdjsonLiteralPathForRun) -and (Test-Path -LiteralPath $gpStructuredNdjsonLiteralPathForRun -PathType Leaf)) {
-            Write-Host "Structured NDJSON: " -NoNewline -ForegroundColor DarkCyan
-            Write-Host ([System.IO.Path]::GetFileName($gpStructuredNdjsonLiteralPathForRun)) -ForegroundColor White
-        }
+        $runSummaryLogLines | Set-Content -LiteralPath $gamerunPathForRun -Encoding UTF8
     }
     catch {
         Write-Warn ("Could not write run summary log: {0}" -f $_.Exception.Message)

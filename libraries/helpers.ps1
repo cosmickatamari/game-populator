@@ -3,7 +3,7 @@ Game Populator - helper functions
 https://github.com/cosmickatamari/game-populator
 
 Created by: cosmickatamari
-Updated: 05/04/2026
+Updated: 05/14/2026
 #>
 
 if ([string]::IsNullOrWhiteSpace($script:EntryScriptPath) -or
@@ -15,7 +15,7 @@ if ([string]::IsNullOrWhiteSpace($script:EntryScriptPath) -or
 
 # Single source for name and version; change here only.
 $script:ScriptName = 'Game Populator'
-$script:ScriptVersion = '2026.5.9'
+$script:ScriptVersion = '2026.5.14'
 $script:GamePopulatorRepoUrl = 'https://github.com/cosmickatamari/game-populator'
 $script:GamePopulatorMainZipUrl = 'https://github.com/cosmickatamari/game-populator/archive/refs/heads/main.zip'
 # Tracks last SMB auth fingerprint per UNC server so mismatch can fail fast before long timeouts.
@@ -198,7 +198,7 @@ function Show-Help {
     Write-Host ').' -ForegroundColor White
     Write-Host $cfIndent -NoNewline
     Write-Host ('{0,-30}' -f 'addons-sources.psd1') -NoNewline -ForegroundColor Green
-    Write-Host 'Music players (NSF/SPC -> ' -NoNewline -ForegroundColor White
+    Write-Host 'Music files (NSF/SPC -> ' -NoNewline -ForegroundColor White
     Write-Host 'games\' -NoNewline -ForegroundColor Green
     Write-Host ' per ' -NoNewline -ForegroundColor White
     Write-Host 'addons-names.json' -NoNewline -ForegroundColor Green
@@ -214,7 +214,7 @@ function Show-Help {
     Write-Host 'Translation systems (paired with trans-sources).' -ForegroundColor White
     Write-Host $cfIndent -NoNewline
     Write-Host ('{0,-30}' -f 'addons-names.json') -NoNewline -ForegroundColor Green
-    Write-Host 'Music player definitions (Music: yes).' -ForegroundColor White
+    Write-Host 'Music file definitions (Music: yes).' -ForegroundColor White
     
     Write-Host "`nTemplates (under " -NoNewline -ForegroundColor DarkYellow
     Write-Host "libraries\" -NoNewline -ForegroundColor Green
@@ -585,6 +585,55 @@ function Format-Elapsed {
     return ("{0:00}:{1:00}:{2:00}" -f $Elapsed.Hours, $Elapsed.Minutes, $Elapsed.Seconds)
 }
 
+<#
+.SYNOPSIS
+  Builds markdown-style table lines for the end-of-run console summary (log + terminal).
+#>
+function Get-ConsoleSummaryMarkdownTableLines {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        $Summaries
+    )
+    $sorted = @($Summaries | Sort-Object { [string]$_.Name })
+    if ($sorted.Count -eq 0) { return @() }
+
+    $enUS = [System.Globalization.CultureInfo]::GetCultureInfo('en-US')
+    $dataRows = foreach ($s in $sorted) {
+        [pscustomobject]@{
+            System  = [string]$s.Name
+            Elapsed = Format-Elapsed -Elapsed ([TimeSpan]$s.Elapsed)
+            Files   = ([long]$s.Files).ToString('N0', $enUS)
+            Size    = Format-Size -Bytes ([long]$s.Bytes)
+        }
+    }
+
+    $hSystem = 'System'
+    $hElapsed = 'Elapsed Time'
+    $hFiles = 'Files Copied'
+    $hSize = 'File Size'
+
+    $wSystem = [Math]::Max($hSystem.Length, ($dataRows | ForEach-Object { $_.System.Length } | Measure-Object -Maximum).Maximum)
+    $wElapsed = [Math]::Max($hElapsed.Length, ($dataRows | ForEach-Object { $_.Elapsed.Length } | Measure-Object -Maximum).Maximum)
+    $wFiles = [Math]::Max($hFiles.Length, ($dataRows | ForEach-Object { $_.Files.Length } | Measure-Object -Maximum).Maximum)
+    $wSize = [Math]::Max($hSize.Length, ($dataRows | ForEach-Object { $_.Size.Length } | Measure-Object -Maximum).Maximum)
+
+    $dash = { param([int]$w) [string]::new('-', [Math]::Max(3, $w)) }
+
+    $fmtRow = {
+        param([string]$c0, [string]$c1, [string]$c2, [string]$c3)
+        ('| {0} | {1} | {2} | {3} |' -f $c0, $c1, $c2, $c3)
+    }
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add((& $fmtRow $hSystem.PadRight($wSystem) $hElapsed.PadRight($wElapsed) $hFiles.PadRight($wFiles) $hSize.PadRight($wSize)))
+    $lines.Add((& $fmtRow (& $dash $wSystem) (& $dash $wElapsed) (& $dash $wFiles) (& $dash $wSize)))
+    foreach ($r in $dataRows) {
+        $lines.Add((& $fmtRow $r.System.PadRight($wSystem) $r.Elapsed.PadRight($wElapsed) $r.Files.PadLeft($wFiles) $r.Size.PadLeft($wSize)))
+    }
+    return @($lines)
+}
+
 function Get-ConsoleWidth {
     $default = 120
     try { return [Math]::Max(1, $Host.UI.RawUI.WindowSize.Width) } catch { return $default }
@@ -687,6 +736,22 @@ function Write-7zProgressLine {
 }
 
 $script:SevenZipExe = 'C:\Program Files\7-Zip\7z.exe'
+
+function Resolve-GpSevenZipExePathWithFallbacks {
+    param([string]$Preferred = '')
+    foreach ($cand in @(
+            $(if (-not [string]::IsNullOrWhiteSpace($Preferred)) { $Preferred.Trim() }),
+            $(if ($null -ne $script:SevenZipExe) { ([string]$script:SevenZipExe).Trim() }),
+            'C:\Program Files\7-Zip\7z.exe'
+        )) {
+        if ([string]::IsNullOrWhiteSpace($cand)) { continue }
+        if (Test-Path -LiteralPath $cand -PathType Leaf) {
+            return $cand
+        }
+    }
+    return ''
+}
+
 function Initialize-7z {
     if (Test-Path -LiteralPath $script:SevenZipExe) { return }
     Write-Host "7z.exe was not found at " -NoNewline -ForegroundColor Yellow
@@ -1093,29 +1158,78 @@ function Get-BinCueFoldersFromItems {
     return $folders
 }
 
+function Resolve-RegionTokenToFolderName {
+    param([Parameter(Mandatory = $true)][string]$Token)
+    $t = $Token.Trim()
+    if ([string]::IsNullOrWhiteSpace($t)) { return $null }
+    # Single-token lookup (case-insensitive). Used for the first comma-separated
+    # entry inside a parenthetical region group, e.g. (Japan, USA) -> Japan.
+    if ($t -match '^World$') { return '00 - World' }
+    if ($t -match '^Canada$') { return '01 - USA' }
+    if ($t -match '^USA$') { return '01 - USA' }
+    if ($t -match '^Japan$') { return '02 - Japan' }
+    if ($t -match '^Europe$') { return '03 - Europe' }
+    if ($t -match '^France$') { return '03 - Europe' }
+    if ($t -match '^Germany$') { return '03 - Europe' }
+    if ($t -match '^Italy$') { return '03 - Europe' }
+    if ($t -match '^Spain$') { return '03 - Europe' }
+    if ($t -match '^Brazil$') { return '04 - South America' }
+    if ($t -match '^Latin America$') { return '04 - South America' }
+    if ($t -match '^Australia$') { return '05 - Oceania' }
+    if ($t -match '^Asia$') { return '06 - Asia' }
+    if ($t -match '^China$') { return '06 - Asia' }
+    if ($t -match '^Korea$') { return '06 - Asia' }
+    if ($t -match '^Taiwan$') { return '06 - Asia' }
+    return $null
+}
+
 function Get-RegionFolderName {
     param([Parameter(Mandatory = $true)][string]$Name)
-    # Ordered by return value, then by pattern name
-    if ($Name -match '\(World\)') { return '00 - World' }
-    elseif ($Name -match '\(Canada\)') { return '01 - USA' }
-    elseif ($Name -match '\(USA\)') { return '01 - USA' }
-    elseif ($Name -match '\(USA,\s*Europe\)') { return '01 - USA' }
-    elseif ($Name -match '\(USA,\s*Japan\)') { return '01 - USA' }
-    elseif ($Name -match '\(Japan\)') { return '02 - Japan' }
-    elseif ($Name -match '\(Japan,\s*USA\)') { return '02 - Japan' }
-    elseif ($Name -match '\(Europe\)') { return '03 - Europe' }
-    elseif ($Name -match '\(France\)') { return '03 - Europe' }
-    elseif ($Name -match '\(Germany\)') { return '03 - Europe' }
-    elseif ($Name -match '\(Italy\)') { return '03 - Europe' }
-    elseif ($Name -match '\(Spain\)') { return '03 - Europe' }
-    elseif ($Name -match '\(Brazil\)') { return '04 - S. America' }
-    elseif ($Name -match '\(Latin America\)') { return '04 - S. America' }
-    elseif ($Name -match '\(Australia\)') { return '05 - Oceania' }
-    elseif ($Name -match '\(Asia\)') { return '06 - Asia' }
-    elseif ($Name -match '\(China\)') { return '06 - Asia' }
-    elseif ($Name -match '\(Korea\)') { return '06 - Asia' }
-    elseif ($Name -match '\(Taiwan\)') { return '06 - Asia' }
-    return '99 - Unknown'
+    if ($Name -match '(?i)\(Unl\)|\(Aftermarket\)') {
+        return '99 - Aftermarket'
+    }
+    # For each parenthetical, the first comma-separated region wins (No-Intro-style):
+    # (Japan, USA) -> Japan; (USA, Europe) -> USA. Non-region parens like (Rev 1) are skipped.
+    $rx = [regex]::new('\(([^)]*)\)')
+    foreach ($m in $rx.Matches($Name)) {
+        $inner = $m.Groups[1].Value
+        $commaIdx = $inner.IndexOf([char]',')
+        if ($commaIdx -ge 0) {
+            $firstToken = $inner.Substring(0, $commaIdx).Trim()
+        }
+        else {
+            $firstToken = $inner.Trim()
+        }
+        $folder = Resolve-RegionTokenToFolderName -Token $firstToken
+        if ($null -ne $folder) { return $folder }
+    }
+    return '90 - Other'
+}
+
+function Get-MegaCdVariantChildFolderName {
+    param([Parameter(Mandatory = $true)][string]$ReferenceName)
+    if ([string]::IsNullOrWhiteSpace($ReferenceName)) { return $null }
+    if ($ReferenceName -match '(?i)\(32x CD\)|\(Sega CD 32X\)') {
+        return '02 - Sega CD 32X'
+    }
+    return $null
+}
+
+function Get-ConsoleFolderLayoutRoot {
+    param(
+        [Parameter(Mandatory = $true)][string]$RootFolderPath,
+        [string]$ConsoleKeyLower,
+        [string]$ReferenceName
+    )
+    if ([string]::IsNullOrWhiteSpace($ConsoleKeyLower) -or [string]::IsNullOrWhiteSpace($ReferenceName)) {
+        return $RootFolderPath
+    }
+    if ($ConsoleKeyLower.Trim().ToLowerInvariant() -ne 'sega cd') {
+        return $RootFolderPath
+    }
+    $v = Get-MegaCdVariantChildFolderName -ReferenceName $ReferenceName
+    if (-not $v) { return $RootFolderPath }
+    return (Join-Path $RootFolderPath $v)
 }
 
 function Get-RegionFromFiles {
@@ -1132,15 +1246,47 @@ function Get-RegionDestRootFromRegion {
     param(
         [Parameter(Mandatory = $true)][string]$BasePath,
         [string]$Region,
-        [Parameter(Mandatory = $true)][bool]$Organize
+        [Parameter(Mandatory = $true)][bool]$Organize,
+        [string]$ConsoleKeyLower = '',
+        [string]$ReferenceName = ''
     )
-    if (-not $Organize -or -not $Region) { return $BasePath }
-    return (Join-Path $BasePath $Region)
+    $scoped = Get-ConsoleFolderLayoutRoot -RootFolderPath $BasePath -ConsoleKeyLower $ConsoleKeyLower -ReferenceName $ReferenceName
+    if (-not $Organize -or -not $Region) { return $scoped }
+    return (Join-Path $scoped $Region)
+}
+
+function Test-IsGeoRegionOrganizeFolderName {
+    param([Parameter(Mandatory = $true)][string]$FolderName)
+    $t = $FolderName.Trim()
+    if ([string]::IsNullOrWhiteSpace($t)) { return $false }
+    if ($null -eq $script:__gpGeoRegionFolderNameSet) {
+        $h = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($n in @(
+                '00 - World',
+                '01 - USA',
+                '02 - Japan',
+                '03 - Europe',
+                '04 - South America',
+                '05 - Oceania',
+                '06 - Asia',
+                '90 - Other',
+                '99 - Aftermarket',
+                '99 - Unknown'
+            )) {
+            [void]$h.Add($n)
+        }
+        $script:__gpGeoRegionFolderNameSet = $h
+    }
+    return $script:__gpGeoRegionFolderNameSet.Contains($t)
 }
 
 function Get-OrderedRegionKeys {
-    param([Parameter(Mandatory = $true)][string[]]$Keys)
-    return @(
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Keys,
+        # When set, sort by region label (after numeric prefix) A–Z; "90 - Other" then legacy unknown last.
+        [switch]$AlphabeticalWithOtherLast
+    )
+    $objs = @(
         foreach ($key in $Keys) {
             $code = [int]::MaxValue
             $name = $key
@@ -1148,13 +1294,27 @@ function Get-OrderedRegionKeys {
                 $code = [int]$Matches[1]
                 $name = $Matches[2].Trim()
             }
+            $sortName = if ($name) { $name } else { $key }
+            $tailRank = 0
+            if ($key -match '^\s*99\s*-\s*Unknown\s*$' -or ($sortName -match '^(?i)Unknown$')) {
+                $tailRank = 2
+            }
+            elseif ($key -match '^\s*90\s*-\s*Other\s*$' -or ($sortName -match '^(?i)Other$')) {
+                $tailRank = 1
+            }
             [pscustomobject]@{
-                Key  = $key
-                Code = $code
-                Name = $name
+                Key       = $key
+                Code      = $code
+                Name      = $name
+                SortName  = $sortName
+                TailRank  = $tailRank
             }
         }
-    ) | Sort-Object Code, Name | ForEach-Object { $_.Key }
+    )
+    if ($AlphabeticalWithOtherLast) {
+        return @($objs | Sort-Object @{ Expression = { $_.TailRank }; Ascending = $true }, @{ Expression = { [string]$_.SortName }; Ascending = $true }, @{ Expression = { [string]$_.Key }; Ascending = $true } | ForEach-Object { $_.Key })
+    }
+    return @($objs | Sort-Object Code, Name | ForEach-Object { $_.Key })
 }
 
 function Get-RegionCountsFromDestination {
@@ -1163,10 +1323,15 @@ function Get-RegionCountsFromDestination {
     if (-not (Test-Path -LiteralPath $FolderPath -PathType Container)) { return $counts }
     $directories = @(Get-ChildItem -LiteralPath $FolderPath -Directory -ErrorAction SilentlyContinue)
     foreach ($dir in $directories) {
-        if ($dir.Name -match '^\d+\s*-\s*') {
-            $items = @(Get-ChildItem -LiteralPath $dir.FullName -ErrorAction SilentlyContinue)
-            $counts[$dir.Name] = $items.Count
+        if (-not (Test-IsGeoRegionOrganizeFolderName -FolderName $dir.Name)) { continue }
+        $fc = 0
+        try {
+            $fc = [int]((Get-ChildItem -LiteralPath $dir.FullName -File -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object).Count)
         }
+        catch {
+            $fc = 0
+        }
+        $counts[$dir.Name] = $fc
     }
     return $counts
 }
@@ -1189,13 +1354,15 @@ function Get-RegionDestRoot {
     param(
         [Parameter(Mandatory = $true)][string]$BasePath,
         [Parameter(Mandatory = $true)][string]$Name,
-        [Parameter(Mandatory = $true)][bool]$Organize
+        [Parameter(Mandatory = $true)][bool]$Organize,
+        [string]$ConsoleKeyLower = ''
     )
-    if (-not $Organize) { return $BasePath }
-    if ($Name -match '\.rom$' -and $Name -imatch 'boot') { return $BasePath }
+    $scoped = Get-ConsoleFolderLayoutRoot -RootFolderPath $BasePath -ConsoleKeyLower $ConsoleKeyLower -ReferenceName $Name
+    if (-not $Organize) { return $scoped }
+    if ($Name -match '\.rom$' -and $Name -imatch 'boot') { return $scoped }
     $region = Get-RegionFolderName -Name $Name
-    if (-not $region) { return $BasePath }
-    return (Join-Path $BasePath $region)
+    if (-not $region) { return $scoped }
+    return (Join-Path $scoped $region)
 }
 
 function Get-ContainingRegionFolderName {
@@ -1223,7 +1390,8 @@ function Move-RegionInFolder {
         [Parameter(Mandatory = $true)][string]$FolderPath,
         [string]$ProgressConsoleName,
         [System.Diagnostics.Stopwatch]$ProgressStopwatch,
-        [bool]$AllowBinCue = $false
+        [bool]$AllowBinCue = $false,
+        [string]$ConsoleKeyLower = ''
     )
     if (-not (Test-Path -LiteralPath $FolderPath -PathType Container)) { return }
     $binCueDirs = @()
@@ -1245,7 +1413,8 @@ function Move-RegionInFolder {
         $region = Get-RegionFromFiles -Files $dirFiles
         if (-not $region) { continue }
         $currentRegion = Get-ContainingRegionFolderName -RootPath $FolderPath -ItemPath $dir.FullName
-        $targetFolder = Join-Path $FolderPath $region
+        $layoutRoot = Get-ConsoleFolderLayoutRoot -RootFolderPath $FolderPath -ConsoleKeyLower $ConsoleKeyLower -ReferenceName $dir.Name
+        $targetFolder = Join-Path $layoutRoot $region
         if (-not (Test-Path -LiteralPath $targetFolder)) {
             New-Item -Path $targetFolder -ItemType Directory -Force | Out-Null
         }
@@ -1297,7 +1466,8 @@ function Move-RegionInFolder {
         }
         $region = Get-RegionFolderName -Name $file.Name
         if (-not $region) { continue }
-        $targetFolder = Join-Path $FolderPath $region
+        $layoutRoot = Get-ConsoleFolderLayoutRoot -RootFolderPath $FolderPath -ConsoleKeyLower $ConsoleKeyLower -ReferenceName $file.Name
+        $targetFolder = Join-Path $layoutRoot $region
         if (-not (Test-Path -LiteralPath $targetFolder)) {
             New-Item -Path $targetFolder -ItemType Directory -Force | Out-Null
         }
@@ -1360,7 +1530,8 @@ function Convert-ConsoleFolder {
         [Parameter(Mandatory = $true)][string]$FolderPath,
         [bool]$AllowBinCue = $false,
         [string]$ProgressConsoleName,
-        [System.Diagnostics.Stopwatch]$ProgressStopwatch
+        [System.Diagnostics.Stopwatch]$ProgressStopwatch,
+        [string]$ConsoleKeyLower = ''
     )
     if (-not (Test-Path -LiteralPath $FolderPath -PathType Container)) { return }
 
@@ -1432,6 +1603,26 @@ function Convert-ConsoleFolder {
     Remove-EmptyFolders -RootPath $FolderPath
 }
 
+function Write-GpCleanupRemovalLogLine {
+    param(
+        [Parameter(Mandatory = $true)][string]$LogsParentLiteralPath,
+        [Parameter(Mandatory = $true)][string]$Line
+    )
+    if ([string]::IsNullOrWhiteSpace($LogsParentLiteralPath)) { return }
+    if (-not (Test-Path -LiteralPath $LogsParentLiteralPath -PathType Container)) {
+        New-Item -Path $LogsParentLiteralPath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    if ([string]::IsNullOrWhiteSpace($script:GpCleanupRemovalLogLiteralPath)) {
+        $script:GpCleanupRemovalLogFileName = ('cleanup-{0}.log' -f (Get-Date).ToString('yyyyMMdd-HHmmss'))
+        $script:GpCleanupRemovalLogLiteralPath = Join-Path $LogsParentLiteralPath $script:GpCleanupRemovalLogFileName
+    }
+    try {
+        Add-Content -LiteralPath $script:GpCleanupRemovalLogLiteralPath -Value $Line -Encoding utf8 -ErrorAction Stop
+    }
+    catch {
+    }
+}
+
 function Remove-DestinationFilesNotMatchingExtensions {
     param(
         [Parameter(Mandatory = $true)][string]$FolderPath,
@@ -1439,7 +1630,9 @@ function Remove-DestinationFilesNotMatchingExtensions {
         # When set, only files in FolderPath itself are scanned (not subfolders). Used for stray files under games\.
         [switch]$TopLevelOnly,
         # When set, every discovered file is removed regardless of extension.
-        [switch]$DeleteAllFiles
+        [switch]$DeleteAllFiles,
+        # When set, each removed file is appended to cleanup-*.log under this directory (first removal creates the file).
+        [string]$CleanupLogsParentLiteralPath = ''
     )
     if (-not (Test-Path -LiteralPath $FolderPath -PathType Container)) {
         return [pscustomobject]@{ FilesRemoved = 0 }
@@ -1467,6 +1660,9 @@ function Remove-DestinationFilesNotMatchingExtensions {
             try {
                 Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
                 $removed++
+                if (-not [string]::IsNullOrWhiteSpace($CleanupLogsParentLiteralPath)) {
+                    Write-GpCleanupRemovalLogLine -LogsParentLiteralPath $CleanupLogsParentLiteralPath -Line ('REMOVED_FILE' + "`t" + $file.FullName)
+                }
             }
             catch {
             }
@@ -1500,6 +1696,33 @@ function Test-IncludeSgbEnhancedForConsole {
         return ($ext -eq '.gbc')
     }
     return $false
+}
+
+function Test-CountedFileForGbSgbConsoleRules {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$ExtNorm,
+        [Parameter(Mandatory = $true)][string]$ConsoleKeyLower,
+        # Matches game-populator.ps1 outer loop: .chd skips SGB naming filters before those checks.
+        [switch]$LooseFileMatchesCopyOuterLoop
+    )
+    if ([string]::IsNullOrWhiteSpace($ConsoleKeyLower)) {
+        return $true
+    }
+    $ck = $ConsoleKeyLower.Trim().ToLowerInvariant()
+    if ($LooseFileMatchesCopyOuterLoop -and ($ExtNorm -eq '.chd')) {
+        return $true
+    }
+    if ($ck -eq 'nintendo game boy' -or $ck -eq 'nintendo game boy color') {
+        if (Test-IsSgbEnhancedRomName -Name $Name) {
+            return $false
+        }
+        return $true
+    }
+    if ($ck -eq 'nintendo super game boy (gb original)' -or $ck -eq 'nintendo super game boy (gbc original)') {
+        return (Test-IncludeSgbEnhancedForConsole -Name $Name -Extension $ExtNorm -ConsoleKeyLower $ck)
+    }
+    return $true
 }
 
 function Remove-SgbEnhancedFilesUnderFolder {
@@ -1579,7 +1802,8 @@ function Invoke-ExistingDestination {
     param(
         [Parameter(Mandatory = $true)][string]$FolderPath,
         [Parameter(Mandatory = $true)][bool]$Organize,
-        [Parameter(Mandatory = $true)][string[]]$ArchiveExtensions
+        [Parameter(Mandatory = $true)][string[]]$ArchiveExtensions,
+        [string]$ConsoleKeyLower = ''
     )
     if (-not (Test-Path -LiteralPath $FolderPath -PathType Container)) { return }
 
@@ -1600,7 +1824,7 @@ function Invoke-ExistingDestination {
                 $hasCue = @($allExtractedFiles | Where-Object { $_.Extension -ieq '.cue' }).Count -gt 0
                 $isBinCueArchive = ($hasBin -and $hasCue)
                 $region = Get-RegionFromFiles -Files $(if ($isBinCueArchive) { $allExtractedFiles } else { $extractedItems })
-                $destRoot = Get-RegionDestRootFromRegion -BasePath $FolderPath -Region $region -Organize $Organize
+                $destRoot = Get-RegionDestRootFromRegion -BasePath $FolderPath -Region $region -Organize $Organize -ConsoleKeyLower $ConsoleKeyLower -ReferenceName $archive.Name
                 if (-not (Test-Path -LiteralPath $destRoot)) {
                     New-Item -Path $destRoot -ItemType Directory -Force | Out-Null
                 }
@@ -1681,7 +1905,10 @@ function Add-NameToSet {
 }
 
 function Remove-EmptyFolders {
-    param([Parameter(Mandatory = $true)][string]$RootPath)
+    param(
+        [Parameter(Mandatory = $true)][string]$RootPath,
+        [string]$CleanupLogsParentLiteralPath = ''
+    )
     if (-not (Test-Path -LiteralPath $RootPath -PathType Container)) {
         return [pscustomobject]@{ FoldersRemoved = 0 }
     }
@@ -1694,6 +1921,9 @@ function Remove-EmptyFolders {
             try {
                 Remove-Item -LiteralPath $dir.FullName -Force -ErrorAction Stop
                 $removed++
+                if (-not [string]::IsNullOrWhiteSpace($CleanupLogsParentLiteralPath)) {
+                    Write-GpCleanupRemovalLogLine -LogsParentLiteralPath $CleanupLogsParentLiteralPath -Line ('REMOVED_FOLDER' + "`t" + $dir.FullName)
+                }
             }
             catch {
             }
@@ -1745,6 +1975,29 @@ function Resolve-DestinationGamesSubfolder {
         return $p + $sep + 'games'
     }
     return [System.IO.Path]::Combine($p, 'games')
+}
+
+function Initialize-DestinationGamesDirectory {
+    # Creates the resolved MiSTer games folder (and parents) when missing. Returns true if that folder exists after the call.
+    param([Parameter(Mandatory = $true)][string]$DestinationRootRaw)
+    $rp = Resolve-DestinationPath -Path ($DestinationRootRaw.Trim())
+    if ([string]::IsNullOrWhiteSpace($rp)) {
+        return $false
+    }
+    $gamesPath = Resolve-DestinationGamesSubfolder -Path $rp
+    if ([string]::IsNullOrWhiteSpace($gamesPath)) {
+        return $false
+    }
+    if (Test-Path -LiteralPath $gamesPath -PathType Container) {
+        return $true
+    }
+    try {
+        $null = New-Item -ItemType Directory -Path $gamesPath -Force -ErrorAction Stop
+        return [bool](Test-Path -LiteralPath $gamesPath -PathType Container)
+    }
+    catch {
+        return $false
+    }
 }
 
 function Test-DestinationLocationReachable {
@@ -1817,6 +2070,155 @@ function Get-ArchiveUnpackedSizeBytesVia7z {
     return $sum
 }
 
+function Get-7zArchiveListedFileEntries {
+    param(
+        [Parameter(Mandatory = $true)][string]$ArchiveLiteralPath,
+        [Parameter(Mandatory = $true)][string]$SevenZipExeLiteralPath
+    )
+    if (-not (Test-Path -LiteralPath $ArchiveLiteralPath -PathType Leaf)) {
+        return $null
+    }
+    if (-not (Test-Path -LiteralPath $SevenZipExeLiteralPath -PathType Leaf)) {
+        return $null
+    }
+    $quotedArchive = if ($ArchiveLiteralPath -match '\s') { '"' + $ArchiveLiteralPath + '"' } else { $ArchiveLiteralPath }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $SevenZipExeLiteralPath
+    $psi.Arguments = @('l', '-slt', '-bso1', '-bse0', '-bsp0', $quotedArchive) -join ' '
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    try {
+        $process = [System.Diagnostics.Process]::Start($psi)
+    }
+    catch {
+        return $null
+    }
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $null = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0) {
+        return $null
+    }
+
+    function Test-Is7zArchiveHeaderPathValue {
+        param([string]$PathValue, [string]$ArchivePath)
+        if ([string]::IsNullOrWhiteSpace($PathValue)) {
+            return $true
+        }
+        $pv = $PathValue.Trim().Trim('"')
+        try {
+            $archFull = [System.IO.Path]::GetFullPath($ArchivePath)
+            $pvFull = [System.IO.Path]::GetFullPath($pv)
+            if ($pvFull -eq $archFull) {
+                return $true
+            }
+        }
+        catch {
+        }
+        if ($pv -match '^[A-Za-z]:\\') {
+            $leafPv = [System.IO.Path]::GetFileName($pv)
+            $leafArch = [System.IO.Path]::GetFileName($ArchivePath)
+            if ($leafPv -eq $leafArch) {
+                return $true
+            }
+        }
+        return $false
+    }
+
+    $list = [System.Collections.Generic.List[hashtable]]::new()
+    $curPath = $null
+    $curIsFolder = $false
+    $curSize = [long]0
+
+    foreach ($line in ($stdout -split "`r?`n")) {
+        if ($line -match '^\s*Path\s*=\s*(.+)\s*$') {
+            if (-not [string]::IsNullOrWhiteSpace($curPath)) {
+                if (-not (Test-Is7zArchiveHeaderPathValue -PathValue $curPath -ArchivePath $ArchiveLiteralPath)) {
+                    if (-not $curIsFolder) {
+                        $rp = $curPath.Trim().Trim('"')
+                        if (-not ($rp.EndsWith('/') -or $rp.EndsWith('\'))) {
+                            [void]$list.Add(@{ RelPath = $rp; Size = $curSize })
+                        }
+                    }
+                }
+            }
+            $curPath = $Matches[1]
+            $curIsFolder = $false
+            $curSize = [long]0
+        }
+        elseif ($line -match '^\s*Folder\s*=\s*\+\s*$') {
+            $curIsFolder = $true
+        }
+        elseif ($line -match '^\s*Folder\s*=\s*-\s*$') {
+            $curIsFolder = $false
+        }
+        elseif ($line -match '^\s*Size\s*=\s*(\d+)\s*$') {
+            $curSize = [long]$Matches[1]
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($curPath)) {
+        if (-not (Test-Is7zArchiveHeaderPathValue -PathValue $curPath -ArchivePath $ArchiveLiteralPath)) {
+            if (-not $curIsFolder) {
+                $rp = $curPath.Trim().Trim('"')
+                if (-not ($rp.EndsWith('/') -or $rp.EndsWith('\'))) {
+                    [void]$list.Add(@{ RelPath = $rp; Size = $curSize })
+                }
+            }
+        }
+    }
+    return ,$list.ToArray()
+}
+
+function Measure-ArchiveInnerFilteredStatsVia7z {
+    param(
+        [Parameter(Mandatory = $true)][string]$ArchiveLiteralPath,
+        [Parameter(Mandatory = $true)][string]$SevenZipExeLiteralPath,
+        [Parameter(Mandatory = $true)][string]$ConsoleKeyLowerForSgbRomNamingRules
+    )
+    $entries = Get-7zArchiveListedFileEntries -ArchiveLiteralPath $ArchiveLiteralPath -SevenZipExeLiteralPath $SevenZipExeLiteralPath
+    if ($null -eq $entries) {
+        return $null
+    }
+    $ck = $ConsoleKeyLowerForSgbRomNamingRules.Trim().ToLowerInvariant()
+    $hasBin = $false
+    $hasCue = $false
+    foreach ($e in $entries) {
+        $norm = ($e.RelPath -replace '/', '\')
+        if ($norm -match '(?i)\.bin$') {
+            $hasBin = $true
+        }
+        if ($norm -match '(?i)\.cue$') {
+            $hasCue = $true
+        }
+    }
+    $isBinCueArchive = ($hasBin -and $hasCue)
+
+    $fc = 0
+    $tb = [long]0
+    foreach ($e in $entries) {
+        $rel = ($e.RelPath -replace '/', '\')
+        $leaf = [System.IO.Path]::GetFileName($rel)
+        if ([string]::IsNullOrWhiteSpace($leaf)) {
+            continue
+        }
+        if (-not $isBinCueArchive) {
+            $parent = [System.IO.Path]::GetDirectoryName($rel)
+            if (-not [string]::IsNullOrWhiteSpace($parent)) {
+                continue
+            }
+        }
+        $extNorm = [System.IO.Path]::GetExtension($leaf).ToLowerInvariant()
+        if (-not (Test-CountedFileForGbSgbConsoleRules -Name $leaf -ExtNorm $extNorm -ConsoleKeyLower $ck)) {
+            continue
+        }
+        $fc++
+        $tb += [long]$e.Size
+    }
+    return [pscustomobject]@{ FileCount = $fc; TotalBytes = $tb }
+}
+
 function Measure-DirectoryFileCountAndBytes {
     param(
         [Parameter(Mandatory = $true)][string]$LiteralDirectoryPath,
@@ -1825,7 +2227,13 @@ function Measure-DirectoryFileCountAndBytes {
         # When set, only files whose extension is allowed for that system (or matches ArchiveExtensions) are counted.
         [System.Collections.Generic.HashSet[string]]$AllowedExtensionsForEligibility = $null,
         # When true, optical sources count every file under detected BIN/CUE game folders (matches copy), then loose CHDs and other eligible files.
-        [switch]$UseOpticalCopySemantics
+        [switch]$UseOpticalCopySemantics,
+        # Game Boy / Super Game Boy keys: same filename rules as game-populator.ps1 (SGB Enhanced in name, extensions).
+        [string]$ConsoleKeyLowerForRomNamingRules = '',
+        # When set (7z.exe path), used to list archives for SGB naming rules even if SevenZipExeForUnpackedEstimate is empty (compressed-size report mode).
+        [string]$SevenZipExeForSgbArchiveInnerListing = '',
+        # When set, avoids a second directory walk (e.g. copy preamble already enumerated the source tree).
+        [object[]]$PreenumeratedSourceFiles = $null
     )
     $p = $LiteralDirectoryPath.Trim()
     if ([string]::IsNullOrWhiteSpace($p)) {
@@ -1844,6 +2252,29 @@ function Measure-DirectoryFileCountAndBytes {
     $useUnpacked = -not [string]::IsNullOrWhiteSpace($SevenZipExeForUnpackedEstimate) -and
     (Test-Path -LiteralPath $SevenZipExeForUnpackedEstimate -PathType Leaf) -and
     ($archiveExtEligible.Count -gt 0)
+
+    $sevenZipForSgbInner = ''
+    if (-not [string]::IsNullOrWhiteSpace($SevenZipExeForSgbArchiveInnerListing)) {
+        $tInner = $SevenZipExeForSgbArchiveInnerListing.Trim()
+        if (Test-Path -LiteralPath $tInner -PathType Leaf) {
+            $sevenZipForSgbInner = $tInner
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($sevenZipForSgbInner) -and $useUnpacked) {
+        $sevenZipForSgbInner = $SevenZipExeForUnpackedEstimate.Trim()
+    }
+
+    $sgbRulesKey = ''
+    $useGbGbcSgbNamingFilter = $false
+    if (-not [string]::IsNullOrWhiteSpace($ConsoleKeyLowerForRomNamingRules)) {
+        $sgbRulesKey = $ConsoleKeyLowerForRomNamingRules.Trim().ToLowerInvariant()
+        $useGbGbcSgbNamingFilter = @(
+            'nintendo game boy',
+            'nintendo game boy color',
+            'nintendo super game boy (gb original)',
+            'nintendo super game boy (gbc original)'
+        ) -contains $sgbRulesKey
+    }
 
     function Get-NormalizedFileExtension {
         param([System.IO.FileInfo]$FileItem)
@@ -1916,15 +2347,56 @@ function Measure-DirectoryFileCountAndBytes {
 
     $fc = 0
     $tb = [long]0
-    Get-ChildItem -LiteralPath $p -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
-        $extNorm = Get-NormalizedFileExtension -FileItem $_
+    $filesToMeasure = $null
+    if ($null -ne $PreenumeratedSourceFiles -and @($PreenumeratedSourceFiles).Count -gt 0) {
+        $filesToMeasure = @($PreenumeratedSourceFiles)
+    }
+    else {
+        $filesToMeasure = @(Get-ChildItem -LiteralPath $p -Recurse -File -Force -ErrorAction SilentlyContinue)
+    }
+    foreach ($srcFile in $filesToMeasure) {
+        if (-not $srcFile -or $srcFile.PSIsContainer) { continue }
+        $extNorm = Get-NormalizedFileExtension -FileItem $srcFile
         if (-not (Test-EligibleForCountedStats -ExtNorm $extNorm)) {
-            return
+            continue
+        }
+        $len = [long]$srcFile.Length
+        if ($useGbGbcSgbNamingFilter -and $archiveExtEligible.Contains($extNorm)) {
+            $innerStats = $null
+            if (-not [string]::IsNullOrWhiteSpace($sevenZipForSgbInner) -and (Test-Path -LiteralPath $sevenZipForSgbInner -PathType Leaf)) {
+                $innerStats = Measure-ArchiveInnerFilteredStatsVia7z `
+                    -ArchiveLiteralPath $srcFile.FullName `
+                    -SevenZipExeLiteralPath $sevenZipForSgbInner `
+                    -ConsoleKeyLowerForSgbRomNamingRules $sgbRulesKey
+            }
+            if ($null -ne $innerStats) {
+                $fc += [int]$innerStats.FileCount
+                $tb += [long]$innerStats.TotalBytes
+                continue
+            }
+            $fc++
+            if ($useUnpacked -and ($archiveExtEligible.Count -gt 0)) {
+                $unpacked = Get-ArchiveUnpackedSizeBytesVia7z -ArchiveLiteralPath $srcFile.FullName -SevenZipExeLiteralPath $SevenZipExeForUnpackedEstimate
+                if ($null -ne $unpacked) {
+                    $tb += $unpacked
+                }
+                else {
+                    $tb += $len
+                }
+            }
+            else {
+                $tb += $len
+            }
+            continue
+        }
+        if ($useGbGbcSgbNamingFilter) {
+            if (-not (Test-CountedFileForGbSgbConsoleRules -Name $srcFile.Name -ExtNorm $extNorm -ConsoleKeyLower $sgbRulesKey -LooseFileMatchesCopyOuterLoop)) {
+                continue
+            }
         }
         $fc++
-        $len = [long]$_.Length
         if ($useUnpacked -and ($archiveExtEligible.Count -gt 0) -and $archiveExtEligible.Contains($extNorm)) {
-            $unpacked = Get-ArchiveUnpackedSizeBytesVia7z -ArchiveLiteralPath $_.FullName -SevenZipExeLiteralPath $SevenZipExeForUnpackedEstimate
+            $unpacked = Get-ArchiveUnpackedSizeBytesVia7z -ArchiveLiteralPath $srcFile.FullName -SevenZipExeLiteralPath $SevenZipExeForUnpackedEstimate
             if ($null -ne $unpacked) {
                 $tb += $unpacked
             }
@@ -2032,7 +2504,7 @@ function Disconnect-GamePopulatorNetworkMappings {
         $serverNamePart = $pfx.Substring(2)
         $null = $set.Add($serverNamePart)
     }
-    $uncServerList = $set.ToArray()
+    $uncServerList = @($set)
     if (-not $Quiet) {
         if ($uncServerList.Count -eq 0) {
             Write-Info 'No UNC paths in the supplied list - script PSDrives cleared only.'

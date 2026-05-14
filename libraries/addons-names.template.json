@@ -1,17 +1,17 @@
 [
   {
-    "ShortName": "NES-NSF",
-    "Name": "Music Player - Nintendo Entertainment System",
-    "SubDir": "10 - NSF",
+    "ShortName": "NES",
+    "Name": "Music Files - Nintendo Entertainment System",
+    "SubDir": "40 - Nintendo Sound Font",
     "Music": "yes",
     "Extensions": [
       ".nsf"
     ]
   },
   {
-    "ShortName": "SNES-SPC",
-    "Name": "Music Player - Super Nintendo Entertainment System",
-    "SubDir": "10 - SPC",
+    "ShortName": "SPC",
+    "Name": "Music Files - Super Nintendo Entertainment System",
+    "SubDir": "40 - Super Nintendo Portable Compressed",
     "Music": "yes",
     "Extensions": [
       ".spc"
